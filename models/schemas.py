@@ -3,31 +3,54 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class QueryRequest(BaseModel):
-    """Request model for querying documents"""
-    question: str = Field(..., description="Question to ask about the documents")
-    max_results: Optional[int] = Field(5, description="Maximum number of results to return")
-    document_ids: Optional[List[str]] = Field(None, description="Specific document IDs to search in")
+    """Request model for querying a specific PDF"""
+    pdf_filename: str = Field(..., description="Name of the PDF file to query")
+    query: str = Field(..., description="Question to ask about the PDF")
+    max_results: Optional[int] = Field(5, description="Maximum number of results to return", ge=1, le=20)
 
-class Source(BaseModel):
-    """Source information for query results"""
+class ImageInfo(BaseModel):
+    """Image information model"""
+    filename: str
+    url: str
+    page_number: int
+
+class QueryResult(BaseModel):
+    """Individual query result"""
     heading: str
-    document: str
-    images: List[str] = []
+    text: str
+    score: float
+    page_number: Optional[int] = None
+    images: List[ImageInfo] = []
 
 class QueryResponse(BaseModel):
-    """Response model for document queries"""
-    question: str
+    """Response model for PDF queries"""
+    pdf_filename: str
+    query: str
     answer: str
-    sources: List[Source] = []
-    confidence_score: float = Field(0.0, ge=0.0, le=1.0)
+    results: List[QueryResult] = []
+    total_matches: int
+    processing_time: float
 
-class DocumentInfo(BaseModel):
-    """Document information model"""
-    id: str
+class PDFInfo(BaseModel):
+    """PDF information model"""
     filename: str
-    upload_date: datetime
-    chunk_count: int
-    status: str
+    upload_date: Optional[datetime] = None
+    page_count: Optional[int] = None
+    file_size: Optional[int] = None
+    chunk_count: Optional[int] = None
+
+class PDFListResponse(BaseModel):
+    """Response model for listing PDFs"""
+    pdfs: List[PDFInfo]
+    total_count: int
+
+class UploadResponse(BaseModel):
+    """PDF upload response model"""
+    success: bool
+    message: str
+    pdf_filename: str
+    document_id: Optional[str] = None
+    processing_status: str
 
 class HealthResponse(BaseModel):
     """Health check response model"""
@@ -35,34 +58,11 @@ class HealthResponse(BaseModel):
     message: str
     vector_store_status: str
     openai_status: str
+    timestamp: datetime
 
-class ProcessingStatus(BaseModel):
-    """Processing status model"""
-    document_id: str
-    filename: str
-    status: str  # "processing", "completed", "failed"
-    progress: float = Field(0.0, ge=0.0, le=1.0)
-    message: Optional[str] = None
-    started_at: datetime
-    completed_at: Optional[datetime] = None
-
-class ChunkData(BaseModel):
-    """Chunk data model"""
-    id: str
-    text: str
-    heading: str
-    images: List[str] = []
-    tables: List[str] = []
-    metadata: Dict[str, Any] = {}
-
-class DocumentMetadata(BaseModel):
-    """Document metadata model"""
-    filename: str
-    file_hash: str
-    file_size: int
-    page_count: int
-    upload_date: datetime
-    processing_date: Optional[datetime] = None
-    chunk_count: int = 0
-    image_count: int = 0
-    table_count: int = 0
+class ErrorResponse(BaseModel):
+    """Error response model"""
+    success: bool = False
+    error: str
+    details: Optional[Dict[str, Any]] = None
+    timestamp: datetime

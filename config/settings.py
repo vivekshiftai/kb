@@ -17,19 +17,14 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS: list = [".pdf"]
     
-    # ChromaDB Configuration
-    CHROMADB_DIR: str = "./chromadb_storage"
-    COLLECTION_NAME: str = "pdf_documents"
-    IMAGE_COLLECTION_NAME: str = "document_images"
-    
-    # MinerU Configuration
-    DEVICE_MODE: str = "cuda"  # or "cpu"
-    VIRTUAL_VRAM_SIZE: int = 8
-    MODELS_DIR: str = "./models"
+    # Pinecone Configuration
+    PINECONE_API_KEY: str
+    PINECONE_ENVIRONMENT: str
+    PINECONE_INDEX_NAME: str = "pdf-rag-index"
     
     # Embedding Models
     TEXT_EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
-    IMAGE_EMBEDDING_MODEL: str = "clip-ViT-B-32"
+    EMBEDDING_DIMENSION: int = 384
     
     # Processing Configuration
     CHUNK_MAX_LENGTH: int = 1000
@@ -39,6 +34,10 @@ class Settings(BaseSettings):
     # Background Task Configuration
     CLEANUP_INTERVAL_DAYS: int = 7
     MAX_CONCURRENT_PROCESSING: int = 3
+    
+    # Logging Configuration
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"
     
     class Config:
         env_file = ".env"

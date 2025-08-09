@@ -1,22 +1,26 @@
-# PDF Processing API with Vector Database
+# RAG PDF Processing API
 
-A FastAPI application that processes PDF documents using MinerU, stores content in ChromaDB vector database, and provides intelligent querying capabilities using OpenAI's API.
+A high-performance FastAPI application that processes PDF documents and provides intelligent querying capabilities using Pinecone vector database and OpenAI's GPT models.
 
 ## Features
 
-- **PDF Upload & Processing**: Upload PDF files and extract text, images, and tables
-- **Vector Database Storage**: Store processed content in ChromaDB for semantic search
-- **Intelligent Querying**: Use OpenAI's LLM to answer questions about uploaded documents
-- **Image & Table Extraction**: Handle complex document layouts with images and tables
-- **RESTful API**: Clean API endpoints for integration
+- **PDF Upload & Processing**: Upload PDF files and extract text, images, and metadata
+- **Vector Database Storage**: Store processed content in Pinecone for semantic search with PDF-specific collections
+- **Intelligent Querying**: Query specific PDFs using natural language with OpenAI's LLM
+- **Image Extraction**: Extract and serve images from PDF documents
+- **RESTful API**: Clean, well-documented API endpoints
+- **Performance Optimized**: Target response times < 1s
+- **Comprehensive Logging**: Structured logging for monitoring and debugging
+- **Test Coverage**: Comprehensive test suite with pytest
 
 ## Installation
 
 ### Prerequisites
 
 - Python 3.8+
-- CUDA-compatible GPU (recommended for faster processing)
 - OpenAI API key
+- Pinecone API key and environment
+- CUDA-compatible GPU (optional, for faster processing)
 
 ### Setup
 
@@ -34,24 +38,22 @@ A FastAPI application that processes PDF documents using MinerU, stores content 
    pip install -r requirements.txt
    ```
 
-4. **Download MinerU models** (first time only):
-   ```bash
-   python scripts/download_models.py
-   ```
-
-5. **Set up environment variables**:
+4. **Set up environment variables**:
    Create a `.env` file in the root directory:
    ```env
    OPENAI_API_KEY=your_openai_api_key_here
-   DEVICE_MODE=cuda  # or 'cpu' if no GPU available
+   PINECONE_API_KEY=your_pinecone_api_key_here
+   PINECONE_ENVIRONMENT=your_pinecone_environment
+   PINECONE_INDEX_NAME=pdf-rag-index
+   
    UPLOAD_DIR=./uploads
    OUTPUT_DIR=./outputs
-   CHROMADB_DIR=./chromadb_storage
+   LOG_LEVEL=INFO
    ```
 
-6. **Create necessary directories**:
+5. **Create necessary directories**:
    ```bash
-   mkdir -p uploads outputs chromadb_storage models
+   mkdir -p uploads outputs
    ```
 
 ## Usage
@@ -70,7 +72,7 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
 
 ### API Endpoints
 
-#### 1. Upload and Process PDF
+#### 1. Upload PDF
 ```bash
 POST /upload-pdf/
 ```
@@ -84,98 +86,192 @@ curl -X POST "http://localhost:8000/upload-pdf/" \
      -F "file=@your_document.pdf"
 ```
 
-#### 2. Query Documents
+**Response**:
+```json
+{
+  "success": true,
+  "message": "PDF uploaded successfully, processing started",
+  "pdf_filename": "your_document.pdf",
+  "processing_status": "processing"
+}
+```
+
+#### 2. List Processed PDFs
+```bash
+GET /pdfs/
+```
+Get a list of all processed PDF filenames.
+
+**Example**:
+```bash
+curl -X GET "http://localhost:8000/pdfs/"
+```
+
+**Response**:
+```json
+{
+  "pdfs": [
+    {
+      "filename": "document1.pdf",
+      "chunk_count": 25
+    },
+    {
+      "filename": "document2.pdf", 
+      "chunk_count": 18
+    }
+  ],
+  "total_count": 2
+}
+```
+
+#### 3. Query PDF
 ```bash
 POST /query/
 ```
-Ask questions about uploaded documents.
+Ask questions about a specific uploaded PDF.
 
 **Example**:
 ```bash
 curl -X POST "http://localhost:8000/query/" \
      -H "accept: application/json" \
      -H "Content-Type: application/json" \
-     -d '{"question": "How do I install the conveyor belt?"}'
+     -d '{
+       "pdf_filename": "your_document.pdf",
+       "query": "How do I install the conveyor belt?",
+       "max_results": 5
+     }'
 ```
 
-#### 3. List Processed Documents
+**Response**:
+```json
+{
+  "pdf_filename": "your_document.pdf",
+  "query": "How do I install the conveyor belt?",
+  "answer": "To install the conveyor belt, follow these steps: 1. Remove the old belt...",
+  "results": [
+    {
+      "heading": "Installation Instructions",
+      "text": "Step-by-step installation guide...",
+      "score": 0.95,
+      "images": [
+        {
+          "filename": "installation_diagram.png",
+          "url": "/images/your_document/page_1_img_1.png",
+          "page_number": 1
+        }
+      ]
+    }
+  ],
+  "total_matches": 3,
+  "processing_time": 0.85
+}
+```
+
+#### 4. Delete PDF
 ```bash
-GET /documents/
+DELETE /pdfs/{pdf_filename}
 ```
-Get a list of all processed documents.
+Delete a PDF and all its associated data.
 
-#### 4. Health Check
+#### 5. Health Check
 ```bash
 GET /health/
 ```
 Check if the service is running properly.
 
-## Project Structure
+## Architecture
 
-```
-pdf-processor-api/
-├── main.py                 # FastAPI application
-├── requirements.txt        # Python dependencies
-├── README.md              # This file
-├── .env                   # Environment variables (create this)
-├── config/
-│   ├── __init__.py
-│   ├── settings.py        # Application settings
-│   └── mineru_config.py   # MinerU configuration
-├── models/
-│   ├── __init__.py
-│   ├── schemas.py         # Pydantic models
-│   └── responses.py       # Response models
-├── services/
-│   ├── __init__.py
-│   ├── pdf_processor.py   # PDF processing logic
-│   ├── vector_store.py    # ChromaDB operations
-│   ├── openai_client.py   # OpenAI API client
-│   └── embeddings.py      # Embedding generation
-├── utils/
-│   ├── __init__.py
-│   ├── file_utils.py      # File handling utilities
-│   └── helpers.py         # Helper functions
-├── scripts/
-│   ├── __init__.py
-│   └── download_models.py # Model download script
-├── uploads/               # Uploaded PDF files
-├── outputs/               # Processed outputs
-├── chromadb_storage/      # ChromaDB storage
-└── models/                # Downloaded AI models
-```
+### Key Components
+
+- **FastAPI Application** (`main.py`): Main API server with endpoints
+- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata from PDFs
+- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations with PDF-specific namespaces
+- **Embedding Service** (`services/embeddings.py`): Generates text embeddings using sentence-transformers
+- **OpenAI Client** (`services/openai_client.py`): Handles LLM interactions for answer generation
+
+### Data Flow
+
+1. **PDF Upload**: User uploads PDF → File validation → Background processing
+2. **Processing**: Text extraction → Chunking → Embedding generation → Pinecone storage
+3. **Querying**: Query embedding → Similarity search in PDF namespace → Context retrieval → LLM response generation
+
+### Vector Database Design
+
+- **Pinecone Index**: Single index with PDF-specific namespaces
+- **Namespace Format**: `pdf_{filename_without_extension}`
+- **Metadata**: Includes heading, text snippet, images, page numbers, and chunk indices
+- **Embeddings**: 384-dimensional vectors from sentence-transformers
 
 ## Configuration
 
-The application uses environment variables for configuration. Key settings:
+Key environment variables:
 
 - `OPENAI_API_KEY`: Your OpenAI API key
-- `DEVICE_MODE`: Set to 'cuda' for GPU acceleration or 'cpu' for CPU-only
-- `UPLOAD_DIR`: Directory for uploaded files
-- `OUTPUT_DIR`: Directory for processed outputs
-- `CHROMADB_DIR`: Directory for ChromaDB storage
+- `PINECONE_API_KEY`: Your Pinecone API key  
+- `PINECONE_ENVIRONMENT`: Pinecone environment (e.g., "us-west1-gcp")
+- `PINECONE_INDEX_NAME`: Name of your Pinecone index
+- `CHUNK_MAX_LENGTH`: Maximum chunk size (default: 1000)
+- `CHUNK_OVERLAP`: Overlap between chunks (default: 200)
+- `MAX_SEARCH_RESULTS`: Maximum search results (default: 10)
 
-## Troubleshooting
+## Testing
 
-### Common Issues
+Run the test suite:
 
-1. **CUDA Out of Memory**: Reduce batch size or switch to CPU mode
-2. **Model Download Fails**: Check internet connection and run download script again
-3. **OpenAI API Errors**: Verify your API key and quota
+```bash
+# Install test dependencies
+pip install pytest pytest-asyncio httpx
 
-### Performance Tips
+# Run all tests
+pytest
 
-- Use GPU for faster processing if available
-- Increase `VIRTUAL_VRAM_SIZE` in config for larger documents
-- Process smaller batches for limited memory systems
+# Run with coverage
+pytest --cov=. --cov-report=html
+
+# Run specific test file
+pytest tests/test_main.py -v
+```
+
+## Performance Optimization
+
+- **Async Processing**: Background PDF processing for non-blocking uploads
+- **Efficient Chunking**: Smart text chunking with sentence boundary detection
+- **Batch Operations**: Batch vector upserts to Pinecone
+- **Caching**: Singleton pattern for services and settings
+- **Response Time**: Optimized for < 1s query response times
+
+## Logging
+
+Structured JSON logging with:
+- Request/response tracking
+- Processing pipeline monitoring
+- Error tracking with context
+- Performance metrics
+
+Log levels: DEBUG, INFO, WARNING, ERROR
+
+## Error Handling
+
+- **Validation Errors**: Clear error messages for invalid inputs
+- **Rate Limiting**: Graceful handling of API rate limits
+- **File Errors**: Proper handling of corrupted or invalid PDFs
+- **Service Errors**: Fallback responses for service failures
+
+## Security
+
+- **File Validation**: Strict PDF file validation
+- **Size Limits**: Configurable file size limits
+- **Input Sanitization**: Clean filenames and text inputs
+- **API Key Management**: Secure environment variable handling
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
 
 ## License
 

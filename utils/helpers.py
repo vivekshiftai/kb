@@ -7,18 +7,12 @@ import unicodedata
 logger = logging.getLogger(__name__)
 
 def normalize_text(text: str) -> str:
-    """Normalize text for consistent matching"""
+    """Normalize text for consistent processing"""
     if not text:
         return ""
     
     # Replace tabs/newlines with space
     text = re.sub(r'[\r\n\t]', ' ', text)
-    
-    # Convert to lowercase
-    text = text.lower()
-    
-    # Remove punctuation
-    text = text.translate(str.maketrans('', '', string.punctuation))
     
     # Normalize unicode characters
     text = unicodedata.normalize('NFKD', text)
@@ -29,203 +23,165 @@ def normalize_text(text: str) -> str:
     # Strip leading/trailing whitespace
     return text.strip()
 
-def extract_toc_titles(pdf_path: str) -> List[str]:
-    """Extract table of contents titles from PDF"""
+def chunk_text_with_overlap(text: str, max_length: int = 1000, overlap: int = 200) -> List[str]:
+    """Split text into overlapping chunks"""
     try:
-        import fitz
-        doc = fitz.open(pdf_path)
-        toc = doc.get_toc()
-        titles = [entry[1].strip() for entry in toc if entry[1].strip()]
-        doc.close()
-        return titles
-    except Exception as e:
-        logger.error(f"Error extracting TOC: {e}")
-        return []
-
-def clean_markdown_text(text: str) -> str:
-    """Clean markdown text by removing formatting"""
-    if not text:
-        return ""
-    
-    # Remove markdown headers
-    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
-    
-    # Remove markdown links but keep text
-    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-    
-    # Remove image references
-    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', text)
-    
-    # Remove bold/italic formatting
-    text = re.sub(r'\*\*([^\*]+)\*\*', r'\1', text)
-    text = re.sub(r'\*([^\*]+)\*', r'\1', text)
-    text = re.sub(r'__([^_]+)__', r'\1', text)
-    text = re.sub(r'_([^_]+)_', r'\1', text)
-    
-    # Remove code blocks
-    text = re.sub(r'```[^`]*```', '', text, flags=re.DOTALL)
-    text = re.sub(r'`([^`]+)`', r'\1', text)
-    
-    # Clean up whitespace
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-    text = re.sub(r' +', ' ', text)
-    
-    return text.strip()
-
-def extract_numbered_steps(text: str) -> List[str]:
-    """Extract numbered steps from text"""
-    # Pattern for numbered steps (1., 2., etc.)
-    step_pattern = r'(?:^|\n)\s*(\d+\.)\s*([^\n]*(?:\n(?!\s*\d+\.)[^\n]*)*)'
-    matches = re.findall(step_pattern, text, re.MULTILINE)
-    
-    if matches:
-        return [f"{num} {content.strip()}" for num, content in matches]
-    
-    # Fallback: split by lines if no numbered steps found
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    return lines
-
-def extract_table_data(table_html: str) -> List[List[str]]:
-    """Extract data from HTML table"""
-    try:
-        from bs4 import BeautifulSoup
-        
-        soup = BeautifulSoup(table_html, 'html.parser')
-        table = soup.find('table')
-        
-        if not table:
-            return []
-        
-        rows = []
-        for tr in table.find_all('tr'):
-            cells = []
-            for cell in tr.find_all(['td', 'th']):
-                cells.append(cell.get_text(strip=True))
-            if cells:
-                rows.append(cells)
-        
-        return rows
-        
-    except ImportError:
-        logger.warning("BeautifulSoup not available for table parsing")
-        return []
-    except Exception as e:
-        logger.error(f"Error parsing table: {e}")
-        return []
-
-def format_text_for_display(text: str, max_length: int = 200) -> str:
-    """Format text for display with length limit"""
-    if not text:
-        return ""
-    
-    # Clean the text
-    cleaned = clean_markdown_text(text)
-    
-    # Limit length
-    if len(cleaned) > max_length:
-        cleaned = cleaned[:max_length] + "..."
-    
-    return cleaned
-
-def extract_keywords(text: str, max_keywords: int = 10) -> List[str]:
-    """Extract keywords from text"""
-    try:
-        # Simple keyword extraction based on word frequency
-        words = normalize_text(text).split()
-        
-        # Filter out common stop words
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
-            'before', 'after', 'above', 'below', 'between', 'among', 'upon',
-            'against', 'within', 'throughout', 'beneath', 'alongside', 'is', 'are',
-            'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
-            'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must',
-            'shall', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he',
-            'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'
-        }
-        
-        # Count word frequencies
-        word_freq = {}
-        for word in words:
-            if len(word) > 2 and word not in stop_words:
-                word_freq[word] = word_freq.get(word, 0) + 1
-        
-        # Sort by frequency and return top keywords
-        keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        return [word for word, freq in keywords[:max_keywords]]
-        
-    except Exception as e:
-        logger.error(f"Error extracting keywords: {e}")
-        return []
-
-def validate_text_quality(text: str) -> Dict[str, Any]:
-    """Validate text quality and return metrics"""
-    try:
-        if not text:
-            return {"valid": False, "reason": "Empty text"}
-        
-        # Basic quality checks
-        word_count = len(text.split())
-        char_count = len(text)
-        line_count = len(text.split('\n'))
-        
-        # Check for minimum content
-        if word_count < 5:
-            return {"valid": False, "reason": "Too few words"}
-        
-        if char_count < 20:
-            return {"valid": False, "reason": "Too short"}
-        
-        # Check for meaningful content (not just special characters)
-        alpha_ratio = sum(c.isalnum() for c in text) / len(text)
-        if alpha_ratio < 0.3:
-            return {"valid": False, "reason": "Too few alphanumeric characters"}
-        
-        return {
-            "valid": True,
-            "word_count": word_count,
-            "char_count": char_count,
-            "line_count": line_count,
-            "alpha_ratio": alpha_ratio
-        }
-        
-    except Exception as e:
-        logger.error(f"Error validating text quality: {e}")
-        return {"valid": False, "reason": f"Validation error: {str(e)}"}
-
-def chunk_text_by_sentences(text: str, max_chunk_size: int = 1000, overlap: int = 100) -> List[str]:
-    """Chunk text by sentences with overlap"""
-    try:
-        # Simple sentence splitting
-        sentences = re.split(r'[.!?]+', text)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        if not text or len(text) <= max_length:
+            return [text] if text else []
         
         chunks = []
-        current_chunk = ""
+        start = 0
         
-        for sentence in sentences:
-            # If adding this sentence would exceed max size, save current chunk
-            if len(current_chunk) + len(sentence) > max_chunk_size and current_chunk:
-                chunks.append(current_chunk.strip())
-                
-                # Start new chunk with overlap
-                if overlap > 0 and len(current_chunk) > overlap:
-                    current_chunk = current_chunk[-overlap:] + " " + sentence
-                else:
-                    current_chunk = sentence
+        while start < len(text):
+            # Find the end position
+            end = start + max_length
+            
+            if end >= len(text):
+                # Last chunk
+                chunks.append(text[start:])
+                break
+            
+            # Try to break at sentence boundary
+            chunk_text = text[start:end]
+            
+            # Look for sentence endings near the end
+            sentence_endings = ['.', '!', '?', '\n']
+            best_break = -1
+            
+            for i in range(len(chunk_text) - 1, max(0, len(chunk_text) - 100), -1):
+                if chunk_text[i] in sentence_endings and i < len(chunk_text) - 1:
+                    if chunk_text[i + 1].isspace() or chunk_text[i + 1].isupper():
+                        best_break = i + 1
+                        break
+            
+            if best_break > 0:
+                chunks.append(text[start:start + best_break].strip())
+                start = start + best_break - overlap
             else:
-                if current_chunk:
-                    current_chunk += ". " + sentence
+                # No good break found, split at word boundary
+                words = chunk_text.split()
+                if len(words) > 1:
+                    # Remove last word to avoid cutting mid-word
+                    chunk_text = ' '.join(words[:-1])
+                    chunks.append(chunk_text)
+                    start = start + len(chunk_text) - overlap
                 else:
-                    current_chunk = sentence
+                    # Single long word, just split it
+                    chunks.append(chunk_text)
+                    start = end - overlap
+            
+            # Ensure we make progress
+            if start <= len(chunks) - 1 if chunks else 0:
+                start += max_length // 2
         
-        # Add final chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
+        # Clean up chunks
+        cleaned_chunks = []
+        for chunk in chunks:
+            chunk = chunk.strip()
+            if chunk and len(chunk) > 10:  # Minimum chunk size
+                cleaned_chunks.append(chunk)
         
-        return chunks
+        return cleaned_chunks
         
     except Exception as e:
         logger.error(f"Error chunking text: {e}")
         return [text] if text else []
+
+def extract_images_from_pdf(pdf_path: str, output_dir: str) -> List[str]:
+    """Extract images from PDF file"""
+    try:
+        import fitz
+        
+        doc = fitz.open(pdf_path)
+        image_paths = []
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+            image_list = page.get_images()
+            
+            for img_index, img in enumerate(image_list):
+                try:
+                    xref = img[0]
+                    pix = fitz.Pixmap(doc, xref)
+                    
+                    if pix.n - pix.alpha < 4:  # GRAY or RGB
+                        img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
+                        img_path = os.path.join(output_dir, img_filename)
+                        pix.save(img_path)
+                        image_paths.append(img_path)
+                    
+                    pix = None
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to extract image: {e}")
+        
+        doc.close()
+        return image_paths
+        
+    except Exception as e:
+        logger.error(f"Error extracting images from PDF: {e}")
+        return []
+
+def validate_pdf_file(file_path: str) -> Dict[str, Any]:
+    """Validate PDF file"""
+    try:
+        import fitz
+        
+        if not os.path.exists(file_path):
+            return {"valid": False, "error": "File does not exist"}
+        
+        if not file_path.lower().endswith('.pdf'):
+            return {"valid": False, "error": "File is not a PDF"}
+        
+        # Try to open the PDF
+        try:
+            doc = fitz.open(file_path)
+            page_count = doc.page_count
+            file_size = os.path.getsize(file_path)
+            doc.close()
+            
+            return {
+                "valid": True,
+                "page_count": page_count,
+                "file_size": file_size
+            }
+            
+        except Exception as e:
+            return {"valid": False, "error": f"Cannot open PDF: {str(e)}"}
+            
+    except Exception as e:
+        return {"valid": False, "error": f"Validation error: {str(e)}"}
+
+def format_file_size(size_bytes: int) -> str:
+    """Format file size in human readable format"""
+    if size_bytes == 0:
+        return "0 B"
+    
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    import math
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    
+    return f"{s} {size_names[i]}"
+
+def clean_filename(filename: str) -> str:
+    """Clean filename for safe storage"""
+    # Remove or replace problematic characters
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    
+    # Remove multiple consecutive underscores
+    filename = re.sub(r'_+', '_', filename)
+    
+    # Remove leading/trailing underscores and dots
+    filename = filename.strip('_.')
+    
+    # Ensure filename is not too long
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        max_name_len = 255 - len(ext)
+        filename = name[:max_name_len] + ext
+    
+    return filename
