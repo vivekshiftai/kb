@@ -286,6 +286,7 @@ def extract_text_features(text: str) -> Dict[str, Any]:
         logger.error(f"Error extracting text features: {e}")
         return {"word_count": 0, "char_count": 0, "has_numbers": False, "has_special_chars": False}
 
+
 def extract_images_from_pdf(pdf_path):
     """
     Extract images from a PDF file.
