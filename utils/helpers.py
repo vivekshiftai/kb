@@ -7,6 +7,10 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 import unicodedata
+from PyPDF2 import PdfReader
+from PIL import Image
+import io
+
 
 logger = logging.getLogger(__name__)
 
@@ -281,3 +285,27 @@ def extract_text_features(text: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting text features: {e}")
         return {"word_count": 0, "char_count": 0, "has_numbers": False, "has_special_chars": False}
+
+def extract_images_from_pdf(pdf_path):
+    """
+    Extract images from a PDF file.
+
+    Args:
+        pdf_path (str): Path to the PDF file.
+
+    Returns:
+        list: A list of PIL Image objects extracted from PDF.
+    """
+    images = []
+    reader = PdfReader(pdf_path)
+    for page in reader.pages:
+        if "/XObject" in page["/Resources"]:
+            xobjects = page["/Resources"]["/XObject"].get_object()
+            for obj in xobjects:
+                if xobjects[obj]["/Subtype"] == "/Image":
+                    size = (xobjects[obj]["/Width"], xobjects[obj]["/Height"])
+                    data = xobjects[obj].get_data()
+                    mode = "RGB" if xobjects[obj]["/ColorSpace"] == "/DeviceRGB" else "P"
+                    img = Image.frombytes(mode, size, data)
+                    images.append(img)
+    return images
