@@ -516,20 +516,29 @@ class VectorStore:
         if self._store is not None:
             return
             
-        # Determine which store to use
+        # Try Pinecone first if configured
         if self.settings.use_pinecone and PINECONE_AVAILABLE:
-            logger.info("Initializing Pinecone vector store")
-            self._store = PineconeVectorStore(self.embedding_service)
-            self._store_type = "pinecone"
-        elif CHROMADB_AVAILABLE:
+            try:
+                logger.info("Attempting to initialize Pinecone vector store")
+                self._store = PineconeVectorStore(self.embedding_service)
+                await self._store.initialize()
+                self._store_type = "pinecone"
+                logger.info("Pinecone vector store initialized successfully")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize Pinecone: {e}. Falling back to ChromaDB.")
+                # Reset store to try ChromaDB
+                self._store = None
+        
+        # Fallback to ChromaDB
+        if CHROMADB_AVAILABLE:
             logger.info("Initializing ChromaDB vector store (fallback)")
             self._store = ChromaDBVectorStore(self.embedding_service)
+            await self._store.initialize()
             self._store_type = "chromadb"
+            logger.info("ChromaDB vector store initialized successfully")
         else:
             raise RuntimeError("No vector store available. Please install either Pinecone or ChromaDB.")
-        
-        await self._store.initialize()
-        logger.info(f"Vector store initialized: {self._store_type}")
     
     async def initialize(self):
         """Initialize the vector store"""
