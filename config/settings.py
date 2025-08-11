@@ -22,10 +22,14 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB default
     ALLOWED_EXTENSIONS: list = [".pdf"]
     
-    # Pinecone Vector Database Configuration
-    PINECONE_API_KEY: str
+    # Pinecone Vector Database Configuration (Optional)
+    PINECONE_API_KEY: Optional[str] = None
     PINECONE_ENVIRONMENT: str = "us-east-1-aws"  # AWS region format
     PINECONE_INDEX_NAME: str = "pdf-rag-index"
+    
+    # ChromaDB Vector Database Configuration (Fallback)
+    CHROMA_PERSIST_DIRECTORY: str = "./chroma_db"
+    CHROMA_COLLECTION_NAME: str = "pdf_rag_collection"
     
     # Embedding Configuration
     TEXT_EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
@@ -53,6 +57,16 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore extra environment variables
+
+    @property
+    def use_pinecone(self) -> bool:
+        """Check if Pinecone should be used based on credentials availability"""
+        return bool(self.PINECONE_API_KEY)
+
+    @property
+    def vector_store_type(self) -> str:
+        """Get the vector store type to use"""
+        return "pinecone" if self.use_pinecone else "chromadb"
 
 
 # Global settings singleton
