@@ -3,6 +3,7 @@ from sentence_transformers import SentenceTransformer
 import logging
 from typing import List
 import torch
+import asyncio
 
 from config.settings import get_settings
 
@@ -39,7 +40,12 @@ class EmbeddingService:
                 # Return zero embedding for empty text
                 return np.zeros(self.settings.EMBEDDING_DIMENSION)
             
-            embedding = self.model.encode(text, convert_to_numpy=True)
+            # Run encoding in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(
+                None, 
+                lambda: self.model.encode(text, convert_to_numpy=True)
+            )
             return embedding
             
         except Exception as e:
@@ -57,7 +63,12 @@ class EmbeddingService:
                 # Return zero embeddings
                 return np.zeros((len(texts), self.settings.EMBEDDING_DIMENSION))
             
-            embeddings = self.model.encode(valid_texts, convert_to_numpy=True)
+            # Run encoding in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            embeddings = await loop.run_in_executor(
+                None,
+                lambda: self.model.encode(valid_texts, convert_to_numpy=True)
+            )
             return embeddings
             
         except Exception as e:

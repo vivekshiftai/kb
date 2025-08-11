@@ -69,10 +69,10 @@ openai_client = OpenAIClient()
 ensure_directories()
 
 # Mount static files for serving images
-if not os.path.exists(os.path.join(settings.OUTPUT_DIR, "images")):
-    os.makedirs(os.path.join(settings.OUTPUT_DIR, "images"), exist_ok=True)
+images_dir = os.path.join(settings.OUTPUT_DIR, "images")
+os.makedirs(images_dir, exist_ok=True)
 
-app.mount("/images", StaticFiles(directory=os.path.join(settings.OUTPUT_DIR, "images")), name="images")
+app.mount("/images", StaticFiles(directory=images_dir), name="images")
 
 @app.on_event("startup")
 async def startup_event():

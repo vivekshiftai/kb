@@ -16,8 +16,7 @@ def ensure_directories():
     directories = [
         settings.UPLOAD_DIR,
         settings.OUTPUT_DIR,
-        settings.CHROMADB_DIR,
-        settings.MODELS_DIR
+        os.path.join(settings.OUTPUT_DIR, "images")
     ]
     
     for directory in directories:

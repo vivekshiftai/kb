@@ -125,22 +125,25 @@ class TestVectorStore:
     @pytest.fixture
     def vector_store(self):
         """Create vector store for testing"""
-        with patch('pinecone.init'), \
-             patch('pinecone.list_indexes', return_value=[]), \
-             patch('pinecone.create_index'), \
-             patch('pinecone.Index'):
+        with patch('pinecone.Pinecone') as mock_pc_class:
+            mock_pc = Mock()
+            mock_pc_class.return_value = mock_pc
+            mock_pc.list_indexes.return_value = []
             
             store = VectorStore()
+            store.pc = mock_pc
             store.index = Mock()
             return store
     
     @pytest.mark.asyncio
     async def test_initialize(self, vector_store):
         """Test vector store initialization"""
-        with patch('pinecone.init'), \
-             patch('pinecone.list_indexes', return_value=[]), \
-             patch('pinecone.create_index'), \
-             patch('pinecone.Index'):
+        with patch('pinecone.Pinecone') as mock_pc_class:
+            mock_pc = Mock()
+            mock_pc_class.return_value = mock_pc
+            mock_pc.list_indexes.return_value = []
+            
+            vector_store.pc = mock_pc
             
             await vector_store.initialize()
             # Should not raise any exceptions

@@ -1,9 +1,11 @@
 import pinecone
+from pinecone import Pinecone, ServerlessSpec
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
+import asyncio
 
 from config.settings import get_settings
 from services.embeddings import EmbeddingService
@@ -16,28 +18,34 @@ class VectorStore:
     def __init__(self):
         self.settings = get_settings()
         self.embedding_service = EmbeddingService()
+        self.pc = None
         self.index = None
         
     async def initialize(self):
         """Initialize Pinecone client and index"""
         try:
-            # Initialize Pinecone
-            pinecone.init(
-                api_key=self.settings.PINECONE_API_KEY,
-                environment=self.settings.PINECONE_ENVIRONMENT
-            )
+            # Initialize Pinecone client
+            self.pc = Pinecone(api_key=self.settings.PINECONE_API_KEY)
             
             # Create index if it doesn't exist
-            if self.settings.PINECONE_INDEX_NAME not in pinecone.list_indexes():
+            existing_indexes = [index.name for index in self.pc.list_indexes()]
+            
+            if self.settings.PINECONE_INDEX_NAME not in existing_indexes:
                 logger.info(f"Creating Pinecone index: {self.settings.PINECONE_INDEX_NAME}")
-                pinecone.create_index(
+                self.pc.create_index(
                     name=self.settings.PINECONE_INDEX_NAME,
                     dimension=self.settings.EMBEDDING_DIMENSION,
-                    metric="cosine"
+                    metric="cosine",
+                    spec=ServerlessSpec(
+                        cloud="aws",
+                        region=self.settings.PINECONE_ENVIRONMENT
+                    )
                 )
+                # Wait for index to be ready
+                await asyncio.sleep(10)
             
             # Connect to index
-            self.index = pinecone.Index(self.settings.PINECONE_INDEX_NAME)
+            self.index = self.pc.Index(self.settings.PINECONE_INDEX_NAME)
             logger.info("Pinecone initialized successfully")
             
         except Exception as e:
