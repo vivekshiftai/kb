@@ -5,11 +5,12 @@ from typing import Dict, List, Any
 import fitz  # PyMuPDF
 import re
 from datetime import datetime
+import structlog
 
 from config.settings import get_settings
 from utils.helpers import chunk_text_with_overlap, extract_images_from_pdf
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class PDFProcessor:
     """Enhanced PDF processing service"""

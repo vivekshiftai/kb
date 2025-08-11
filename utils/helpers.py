@@ -10,9 +10,10 @@ import unicodedata
 from PyPDF2 import PdfReader
 from PIL import Image
 import io
+import structlog
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def normalize_text(text: str) -> str:

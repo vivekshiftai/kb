@@ -8,13 +8,14 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import fitz  # PyMuPDF
+import structlog
 
 from config.settings import get_settings
 from services.openai_client import OpenAIClient
 from services.pdf_processor import PDFProcessor
 from models.schemas import IoTDeviceRule, MaintenanceData
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class RulesGenerator:
     """Service for generating IoT device rules and maintenance data from PDFs"""

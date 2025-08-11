@@ -5,11 +5,12 @@ from datetime import datetime
 import json
 import asyncio
 import os
+import structlog
 
 from config.settings import get_settings
 from services.embeddings import EmbeddingService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Import vector store clients conditionally
 try:
@@ -586,10 +587,12 @@ class ChromaDBVectorStore(BaseVectorStore):
     async def get_pdf_stats(self, pdf_filename: str) -> Dict[str, Any]:
         """Get statistics for a specific PDF"""
         try:
-            # Count documents for this PDF
-            count = self.collection.count(
+            # Get all documents and filter by pdf_filename
+            results = self.collection.get(
                 where={"pdf_filename": pdf_filename}
             )
+            
+            count = len(results['ids']) if results and 'ids' in results else 0
             
             return {
                 "pdf_filename": pdf_filename,

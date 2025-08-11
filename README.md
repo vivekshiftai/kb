@@ -98,6 +98,23 @@ The API will be available at:
 - **Interactive Docs**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
+## 🧪 Testing
+
+### Test Logging Configuration
+```bash
+python test_logging.py
+```
+
+### Test PDF Processing Logging
+```bash
+python test_pdf_logging.py
+```
+
+### Test Rules API
+```bash
+python test_rules_api.py
+```
+
 ## 📚 API Endpoints
 
 ### 🏠 Root & Health
@@ -307,6 +324,21 @@ pytest tests/test_main.py -v
 
 # Test rules generation service
 python test_rules_api.py
+
+# Test logging configuration
+python test_logging.py
+
+# Test PDF processing logging
+python test_pdf_logging.py
+
+# Test application startup
+python test_app_startup.py
+
+# Run comprehensive tests (recommended for troubleshooting)
+python test_comprehensive.py
+
+# Run diagnostic and fix script (if having PDF processing issues)
+python fix_pdf_issues.py
 ```
 
 ## 📊 Performance Features
@@ -444,5 +476,40 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ```bash
 LOG_LEVEL=DEBUG uvicorn main:app --reload
 ```
+
+### PDF Processing Errors
+
+If you're experiencing errors when adding PDFs:
+
+1. **Run the comprehensive test first:**
+   ```bash
+   python test_comprehensive.py
+   ```
+
+2. **Check directory structure:**
+   ```bash
+   python create_dirs.py
+   ```
+
+3. **Verify logging configuration:**
+   ```bash
+   python test_logging.py
+   ```
+
+4. **Test PDF processing specifically:**
+   ```bash
+   python test_pdf_logging.py
+   ```
+
+5. **Common PDF processing issues:**
+   - **Missing directories**: Run `python create_dirs.py`
+   - **Import errors**: Check if all dependencies are installed
+   - **Vector store issues**: Verify ChromaDB/Pinecone configuration
+   - **Logging errors**: Ensure structlog is properly configured
+
+6. **If errors persist:**
+   - Check the `app.log` file for detailed error messages
+   - Verify your `.env` file configuration
+   - Ensure sufficient disk space for uploads and vector storage
 
 For additional support, please check the logs and API documentation at `/docs`.

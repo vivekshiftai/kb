@@ -4,10 +4,11 @@ import shutil
 import logging
 from datetime import datetime, timedelta
 from typing import List
+import structlog
 
 from config.settings import get_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 def ensure_directories():
     """Create necessary directories if they don't exist"""

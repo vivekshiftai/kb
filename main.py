@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import sys
 import time
 import logging
 from typing import List
@@ -28,35 +29,59 @@ import shutil
 
 # Configure structured logging
 import structlog
-import logging
+from structlog.stdlib import ProcessorFormatter
+from structlog.processors import JSONRenderer, TimeStamper, add_logger_name, add_log_level
 
-# Configure standard logging to output to console
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('app.log')
-    ]
-)
-
+# Configure structlog processors
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
+        add_logger_name,
+        add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
+        TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
+        JSONRenderer()
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
     wrapper_class=structlog.stdlib.BoundLogger,
     cache_logger_on_first_use=True,
 )
+
+# Configure standard library logging to use structlog's formatter
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Remove any existing handlers to avoid duplicates
+for handler in root_logger.handlers[:]:
+    root_logger.removeHandler(handler)
+
+# Stream handler for console output
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(ProcessorFormatter(
+    processor=JSONRenderer(),
+    foreign_pre_chain=[
+        add_logger_name,
+        add_log_level,
+        TimeStamper(fmt="iso"),
+    ]
+))
+root_logger.addHandler(stream_handler)
+
+# File handler for app.log
+file_handler = logging.FileHandler('app.log')
+file_handler.setFormatter(ProcessorFormatter(
+    processor=JSONRenderer(),
+    foreign_pre_chain=[
+        add_logger_name,
+        add_log_level,
+        TimeStamper(fmt="iso"),
+    ]
+))
+root_logger.addHandler(file_handler)
 
 logger = structlog.get_logger(__name__)
 

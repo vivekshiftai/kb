@@ -1,10 +1,11 @@
 import openai
 import logging
 from typing import List, Dict, Any, Optional
+import structlog
 
 from config.settings import get_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class OpenAIClient:
     """OpenAI API client for generating responses"""
