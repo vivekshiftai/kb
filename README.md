@@ -1,84 +1,112 @@
-# RAG PDF Processing API
+# RAG PDF Processing API - Backend Only
 
-A high-performance FastAPI application that processes PDF documents and provides intelligent querying capabilities using Pinecone vector database and OpenAI's GPT models.
+A high-performance FastAPI backend application that processes PDF documents and provides intelligent querying capabilities using Pinecone vector database and OpenAI's GPT models.
 
-## Features
+## 🚀 Features
 
 - **PDF Upload & Processing**: Upload PDF files and extract text, images, and metadata
-- **Vector Database Storage**: Store processed content in Pinecone for semantic search with PDF-specific collections
+- **Vector Database Storage**: Store processed content in Pinecone with PDF-specific namespaces
 - **Intelligent Querying**: Query specific PDFs using natural language with OpenAI's LLM
-- **Image Extraction**: Extract and serve images from PDF documents
-- **RESTful API**: Clean, well-documented API endpoints
-- **Performance Optimized**: Target response times < 1s
-- **Comprehensive Logging**: Structured logging for monitoring and debugging
-- **Test Coverage**: Comprehensive test suite with pytest
+- **Image Extraction & Serving**: Extract and serve images from PDF documents via static URLs
+- **RESTful API**: Clean, well-documented API endpoints with OpenAPI/Swagger docs
+- **Performance Optimized**: Target response times < 1s with async processing
+- **Comprehensive Logging**: Structured JSON logging for monitoring and debugging
+- **Background Processing**: Non-blocking PDF processing with status tracking
 
-## Installation
-
-### Prerequisites
+## 📋 Prerequisites
 
 - Python 3.8+
 - OpenAI API key
 - Pinecone API key and environment
-- CUDA-compatible GPU (optional, for faster processing)
+- 4GB+ RAM recommended for PDF processing
 
-### Setup
+## 🛠️ Installation
 
-1. **Clone the repository and navigate to the project directory**
-
-2. **Create and activate a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-4. **Set up environment variables**:
-   Create a `.env` file in the root directory:
-   ```env
-   OPENAI_API_KEY=your_openai_api_key_here
-   PINECONE_API_KEY=your_pinecone_api_key_here
-   PINECONE_ENVIRONMENT=your_pinecone_environment
-   PINECONE_INDEX_NAME=pdf-rag-index
-   
-   UPLOAD_DIR=./uploads
-   OUTPUT_DIR=./outputs
-   LOG_LEVEL=INFO
-   ```
-
-5. **Create necessary directories**:
-   ```bash
-   mkdir -p uploads outputs
-   ```
-
-## Usage
-
-### Starting the Server
+### 1. Clone and Setup Environment
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-The API will be available at `http://localhost:8000`
+### 2. Environment Configuration
 
-### API Documentation
+Create a `.env` file in the root directory:
 
-Visit `http://localhost:8000/docs` for interactive API documentation.
+```env
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MAX_TOKENS=1500
+OPENAI_TEMPERATURE=0.7
 
-### API Endpoints
+# Pinecone Configuration
+PINECONE_API_KEY=your_pinecone_api_key_here
+PINECONE_ENVIRONMENT=us-east-1-aws
+PINECONE_INDEX_NAME=pdf-rag-index
 
-#### 1. Upload PDF
+# File Processing
+UPLOAD_DIR=./uploads
+OUTPUT_DIR=./outputs
+MAX_FILE_SIZE=52428800
+
+# Processing Configuration
+CHUNK_MAX_LENGTH=1000
+CHUNK_OVERLAP=200
+MAX_SEARCH_RESULTS=10
+
+# Logging
+LOG_LEVEL=INFO
+```
+
+### 3. Create Required Directories
+
 ```bash
-POST /upload-pdf/
+mkdir -p uploads outputs
 ```
-Upload a PDF file for processing and storage in vector database.
 
-**Example**:
+## 🚀 Running the Application
+
+### Development Mode
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Production Mode
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+The API will be available at:
+- **API**: `http://localhost:8000`
+- **Interactive Docs**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+## 📚 API Endpoints
+
+### 🏠 Root & Health
+- `GET /` - API information and available endpoints
+- `GET /health/` - Comprehensive health check
+
+### 📄 PDF Management
+- `POST /upload-pdf/` - Upload and process PDF files
+- `GET /pdfs/` - List all processed PDFs with metadata
+- `DELETE /pdfs/{filename}` - Delete PDF and all associated data
+
+### 🔍 Querying
+- `POST /query/` - Query specific PDFs with natural language
+
+### 🖼️ Static Files
+- `GET /images/{path}` - Serve extracted PDF images
+
+## 💡 Usage Examples
+
+### Upload a PDF
 ```bash
 curl -X POST "http://localhost:8000/upload-pdf/" \
      -H "accept: application/json" \
@@ -86,66 +114,52 @@ curl -X POST "http://localhost:8000/upload-pdf/" \
      -F "file=@your_document.pdf"
 ```
 
-**Response**:
+**Response:**
 ```json
 {
   "success": true,
-  "message": "PDF uploaded successfully, processing started",
+  "message": "PDF uploaded successfully. Processing started in background.",
   "pdf_filename": "your_document.pdf",
   "processing_status": "processing"
 }
 ```
 
-#### 2. List Processed PDFs
-```bash
-GET /pdfs/
-```
-Get a list of all processed PDF filenames.
-
-**Example**:
+### List Processed PDFs
 ```bash
 curl -X GET "http://localhost:8000/pdfs/"
 ```
 
-**Response**:
+**Response:**
 ```json
 {
   "pdfs": [
     {
-      "filename": "document1.pdf",
-      "chunk_count": 25
-    },
-    {
-      "filename": "document2.pdf", 
-      "chunk_count": 18
+      "filename": "manual.pdf",
+      "chunk_count": 25,
+      "file_size": 2048576,
+      "upload_date": "2024-01-15T10:30:00"
     }
   ],
-  "total_count": 2
+  "total_count": 1
 }
 ```
 
-#### 3. Query PDF
-```bash
-POST /query/
-```
-Ask questions about a specific uploaded PDF.
-
-**Example**:
+### Query a PDF
 ```bash
 curl -X POST "http://localhost:8000/query/" \
      -H "accept: application/json" \
      -H "Content-Type: application/json" \
      -d '{
-       "pdf_filename": "your_document.pdf",
+       "pdf_filename": "manual.pdf",
        "query": "How do I install the conveyor belt?",
        "max_results": 5
      }'
 ```
 
-**Response**:
+**Response:**
 ```json
 {
-  "pdf_filename": "your_document.pdf",
+  "pdf_filename": "manual.pdf",
   "query": "How do I install the conveyor belt?",
   "answer": "To install the conveyor belt, follow these steps: 1. Remove the old belt...",
   "results": [
@@ -153,10 +167,11 @@ curl -X POST "http://localhost:8000/query/" \
       "heading": "Installation Instructions",
       "text": "Step-by-step installation guide...",
       "score": 0.95,
+      "page_number": 1,
       "images": [
         {
           "filename": "installation_diagram.png",
-          "url": "/images/your_document/page_1_img_1.png",
+          "url": "/images/manual/page_1_img_1.png",
           "page_number": 1
         }
       ]
@@ -167,59 +182,33 @@ curl -X POST "http://localhost:8000/query/" \
 }
 ```
 
-#### 4. Delete PDF
-```bash
-DELETE /pdfs/{pdf_filename}
-```
-Delete a PDF and all its associated data.
+## 🏗️ Architecture
 
-#### 5. Health Check
-```bash
-GET /health/
-```
-Check if the service is running properly.
+### Core Components
 
-## Architecture
-
-### Key Components
-
-- **FastAPI Application** (`main.py`): Main API server with endpoints
-- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata from PDFs
-- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations with PDF-specific namespaces
-- **Embedding Service** (`services/embeddings.py`): Generates text embeddings using sentence-transformers
-- **OpenAI Client** (`services/openai_client.py`): Handles LLM interactions for answer generation
+- **FastAPI Application** (`main.py`): Main API server with all endpoints
+- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata
+- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations
+- **Embedding Service** (`services/embeddings.py`): Generates text embeddings
+- **OpenAI Client** (`services/openai_client.py`): Handles LLM interactions
 
 ### Data Flow
 
-1. **PDF Upload**: User uploads PDF → File validation → Background processing
-2. **Processing**: Text extraction → Chunking → Embedding generation → Pinecone storage
-3. **Querying**: Query embedding → Similarity search in PDF namespace → Context retrieval → LLM response generation
+1. **PDF Upload** → File validation → Background processing
+2. **Processing** → Text extraction → Chunking → Embedding generation → Pinecone storage
+3. **Querying** → Query embedding → Similarity search → Context retrieval → LLM response
 
 ### Vector Database Design
 
 - **Pinecone Index**: Single index with PDF-specific namespaces
 - **Namespace Format**: `pdf_{filename_without_extension}`
-- **Metadata**: Includes heading, text snippet, images, page numbers, and chunk indices
+- **Metadata**: Includes heading, text, images, page numbers, chunk indices
 - **Embeddings**: 384-dimensional vectors from sentence-transformers
 
-## Configuration
-
-Key environment variables:
-
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `PINECONE_API_KEY`: Your Pinecone API key  
-- `PINECONE_ENVIRONMENT`: Pinecone environment (e.g., "us-west1-gcp")
-- `PINECONE_INDEX_NAME`: Name of your Pinecone index
-- `CHUNK_MAX_LENGTH`: Maximum chunk size (default: 1000)
-- `CHUNK_OVERLAP`: Overlap between chunks (default: 200)
-- `MAX_SEARCH_RESULTS`: Maximum search results (default: 10)
-
-## Testing
-
-Run the test suite:
+## 🧪 Testing
 
 ```bash
-# Install test dependencies
+# Install test dependencies (already in requirements.txt)
 pip install pytest pytest-asyncio httpx
 
 # Run all tests
@@ -232,47 +221,106 @@ pytest --cov=. --cov-report=html
 pytest tests/test_main.py -v
 ```
 
-## Performance Optimization
+## 📊 Performance Features
 
 - **Async Processing**: Background PDF processing for non-blocking uploads
 - **Efficient Chunking**: Smart text chunking with sentence boundary detection
 - **Batch Operations**: Batch vector upserts to Pinecone
-- **Caching**: Singleton pattern for services and settings
-- **Response Time**: Optimized for < 1s query response times
+- **Response Optimization**: Target < 1s query response times
+- **Memory Management**: Efficient handling of large PDFs
 
-## Logging
+## 🔧 Configuration Options
 
-Structured JSON logging with:
+Key environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key | Required |
+| `PINECONE_API_KEY` | Pinecone API key | Required |
+| `PINECONE_ENVIRONMENT` | Pinecone environment | `us-east-1-aws` |
+| `CHUNK_MAX_LENGTH` | Maximum chunk size | `1000` |
+| `CHUNK_OVERLAP` | Overlap between chunks | `200` |
+| `MAX_FILE_SIZE` | Maximum PDF file size | `50MB` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+
+## 📝 Logging
+
+The application uses structured JSON logging with:
 - Request/response tracking
 - Processing pipeline monitoring
 - Error tracking with context
 - Performance metrics
 
-Log levels: DEBUG, INFO, WARNING, ERROR
+Log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`
 
-## Error Handling
-
-- **Validation Errors**: Clear error messages for invalid inputs
-- **Rate Limiting**: Graceful handling of API rate limits
-- **File Errors**: Proper handling of corrupted or invalid PDFs
-- **Service Errors**: Fallback responses for service failures
-
-## Security
+## 🔒 Security Features
 
 - **File Validation**: Strict PDF file validation
 - **Size Limits**: Configurable file size limits
 - **Input Sanitization**: Clean filenames and text inputs
-- **API Key Management**: Secure environment variable handling
+- **CORS Configuration**: Configurable CORS settings
+- **Error Handling**: Secure error messages without sensitive data
 
-## Contributing
+## 🚀 Deployment
+
+### Docker Deployment
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### Environment Variables for Production
+```env
+LOG_LEVEL=WARNING
+MAX_CONCURRENT_PROCESSING=2
+CLEANUP_INTERVAL_DAYS=30
+```
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
+5. Ensure all tests pass (`pytest`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+1. **Pinecone Connection Errors**
+   - Verify API key and environment settings
+   - Check network connectivity
+   - Ensure index exists or can be created
+
+2. **PDF Processing Failures**
+   - Check PDF file integrity
+   - Verify file size limits
+   - Ensure sufficient disk space
+
+3. **OpenAI API Errors**
+   - Verify API key validity
+   - Check rate limits and quotas
+   - Monitor token usage
+
+### Debug Mode
+```bash
+LOG_LEVEL=DEBUG uvicorn main:app --reload
+```
+
+For additional support, please check the logs and API documentation at `/docs`.

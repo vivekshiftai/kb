@@ -1,30 +1,59 @@
+"""
+Utility helper functions for text processing and file operations
+"""
+
 import re
-import string
+import os
 import logging
 from typing import List, Dict, Any, Optional
 import unicodedata
 
 logger = logging.getLogger(__name__)
 
+
 def normalize_text(text: str) -> str:
-    """Normalize text for consistent processing"""
+    """
+    Normalize text for consistent processing
+    
+    Args:
+        text: Input text to normalize
+        
+    Returns:
+        Normalized text string
+    """
     if not text:
         return ""
     
-    # Replace tabs/newlines with space
-    text = re.sub(r'[\r\n\t]', ' ', text)
-    
-    # Normalize unicode characters
-    text = unicodedata.normalize('NFKD', text)
-    
-    # Collapse multiple spaces
-    text = re.sub(r'\s+', ' ', text)
-    
-    # Strip leading/trailing whitespace
-    return text.strip()
+    try:
+        # Replace tabs/newlines with space
+        text = re.sub(r'[\r\n\t]', ' ', text)
+        
+        # Normalize unicode characters
+        text = unicodedata.normalize('NFKD', text)
+        
+        # Collapse multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Strip leading/trailing whitespace
+        return text.strip()
+        
+    except Exception as e:
+        logger.warning(f"Error normalizing text: {e}")
+        return text.strip() if text else ""
+
 
 def chunk_text_with_overlap(text: str, max_length: int = 1000, overlap: int = 200) -> List[str]:
-    """Split text into overlapping chunks"""
+    """
+    Split text into overlapping chunks with smart boundary detection
+    
+    Args:
+        text: Text to chunk
+        max_length: Maximum chunk length
+        overlap: Overlap between chunks
+        
+    Returns:
+        List of text chunks
+    """
     try:
         if not text or len(text) <= max_length:
             return [text] if text else []
@@ -33,12 +62,14 @@ def chunk_text_with_overlap(text: str, max_length: int = 1000, overlap: int = 20
         start = 0
         
         while start < len(text):
-            # Find the end position
+            # Calculate end position
             end = start + max_length
             
             if end >= len(text):
                 # Last chunk
-                chunks.append(text[start:])
+                chunk = text[start:].strip()
+                if chunk and len(chunk) > 10:  # Minimum chunk size
+                    chunks.append(chunk)
                 break
             
             # Try to break at sentence boundary
@@ -48,104 +79,93 @@ def chunk_text_with_overlap(text: str, max_length: int = 1000, overlap: int = 20
             sentence_endings = ['.', '!', '?', '\n']
             best_break = -1
             
+            # Search backwards from end for good break point
             for i in range(len(chunk_text) - 1, max(0, len(chunk_text) - 100), -1):
                 if chunk_text[i] in sentence_endings and i < len(chunk_text) - 1:
-                    if chunk_text[i + 1].isspace() or chunk_text[i + 1].isupper():
+                    # Check if next character suggests end of sentence
+                    if i + 1 < len(chunk_text) and (chunk_text[i + 1].isspace() or chunk_text[i + 1].isupper()):
                         best_break = i + 1
                         break
             
             if best_break > 0:
-                chunks.append(text[start:start + best_break].strip())
+                # Found good sentence boundary
+                chunk = text[start:start + best_break].strip()
+                if chunk and len(chunk) > 10:
+                    chunks.append(chunk)
                 start = start + best_break - overlap
             else:
-                # No good break found, split at word boundary
+                # No good break found, try word boundary
                 words = chunk_text.split()
                 if len(words) > 1:
                     # Remove last word to avoid cutting mid-word
                     chunk_text = ' '.join(words[:-1])
-                    chunks.append(chunk_text)
+                    chunk = chunk_text.strip()
+                    if chunk and len(chunk) > 10:
+                        chunks.append(chunk)
                     start = start + len(chunk_text) - overlap
                 else:
                     # Single long word, just split it
-                    chunks.append(chunk_text)
+                    chunk = chunk_text.strip()
+                    if chunk and len(chunk) > 10:
+                        chunks.append(chunk)
                     start = end - overlap
             
             # Ensure we make progress
-            if start <= len(chunks) - 1 if chunks else 0:
+            if start <= (len(chunks) - 1) * 10 if chunks else 0:
                 start += max_length // 2
         
-        # Clean up chunks
-        cleaned_chunks = []
-        for chunk in chunks:
-            chunk = chunk.strip()
-            if chunk and len(chunk) > 10:  # Minimum chunk size
-                cleaned_chunks.append(chunk)
-        
-        return cleaned_chunks
+        logger.info(f"Text chunked into {len(chunks)} pieces")
+        return chunks
         
     except Exception as e:
         logger.error(f"Error chunking text: {e}")
         return [text] if text else []
 
-def extract_images_from_pdf(pdf_path: str, output_dir: str) -> List[str]:
-    """Extract images from PDF file"""
-    try:
-        import fitz
-        
-        doc = fitz.open(pdf_path)
-        image_paths = []
-        
-        os.makedirs(output_dir, exist_ok=True)
-        
-        for page_num in range(doc.page_count):
-            page = doc[page_num]
-            image_list = page.get_images()
-            
-            for img_index, img in enumerate(image_list):
-                try:
-                    xref = img[0]
-                    pix = fitz.Pixmap(doc, xref)
-                    
-                    if pix.n - pix.alpha < 4:  # GRAY or RGB
-                        img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
-                        img_path = os.path.join(output_dir, img_filename)
-                        pix.save(img_path)
-                        image_paths.append(img_path)
-                    
-                    pix = None
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to extract image: {e}")
-        
-        doc.close()
-        return image_paths
-        
-    except Exception as e:
-        logger.error(f"Error extracting images from PDF: {e}")
-        return []
 
 def validate_pdf_file(file_path: str) -> Dict[str, Any]:
-    """Validate PDF file"""
-    try:
-        import fitz
+    """
+    Validate PDF file structure and readability
+    
+    Args:
+        file_path: Path to PDF file
         
+    Returns:
+        Dictionary with validation results
+    """
+    try:
         if not os.path.exists(file_path):
             return {"valid": False, "error": "File does not exist"}
         
         if not file_path.lower().endswith('.pdf'):
             return {"valid": False, "error": "File is not a PDF"}
         
-        # Try to open the PDF
+        # Check file size
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            return {"valid": False, "error": "File is empty"}
+        
+        # Try to open and validate PDF structure
         try:
+            import fitz  # PyMuPDF
+            
             doc = fitz.open(file_path)
             page_count = doc.page_count
-            file_size = os.path.getsize(file_path)
+            
+            if page_count == 0:
+                doc.close()
+                return {"valid": False, "error": "PDF has no pages"}
+            
+            # Try to read first page to ensure it's not corrupted
+            first_page = doc[0]
+            text = first_page.get_text()
+            
             doc.close()
             
             return {
                 "valid": True,
                 "page_count": page_count,
-                "file_size": file_size
+                "file_size": file_size,
+                "has_text": len(text.strip()) > 0
             }
             
         except Exception as e:
@@ -154,34 +174,110 @@ def validate_pdf_file(file_path: str) -> Dict[str, Any]:
     except Exception as e:
         return {"valid": False, "error": f"Validation error: {str(e)}"}
 
+
 def format_file_size(size_bytes: int) -> str:
-    """Format file size in human readable format"""
+    """
+    Format file size in human readable format
+    
+    Args:
+        size_bytes: File size in bytes
+        
+    Returns:
+        Formatted file size string
+    """
     if size_bytes == 0:
         return "0 B"
     
     size_names = ["B", "KB", "MB", "GB", "TB"]
     import math
-    i = int(math.floor(math.log(size_bytes, 1024)))
-    p = math.pow(1024, i)
-    s = round(size_bytes / p, 2)
     
-    return f"{s} {size_names[i]}"
+    try:
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 2)
+        return f"{s} {size_names[i]}"
+    except (ValueError, OverflowError):
+        return f"{size_bytes} B"
+
 
 def clean_filename(filename: str) -> str:
-    """Clean filename for safe storage"""
-    # Remove or replace problematic characters
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    """
+    Clean filename for safe storage
     
-    # Remove multiple consecutive underscores
-    filename = re.sub(r'_+', '_', filename)
+    Args:
+        filename: Original filename
+        
+    Returns:
+        Cleaned filename
+    """
+    if not filename:
+        return ""
     
-    # Remove leading/trailing underscores and dots
-    filename = filename.strip('_.')
+    try:
+        # Remove or replace problematic characters
+        filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        
+        # Remove control characters
+        filename = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', filename)
+        
+        # Remove multiple consecutive underscores
+        filename = re.sub(r'_+', '_', filename)
+        
+        # Remove leading/trailing underscores and dots
+        filename = filename.strip('_.')
+        
+        # Ensure filename is not too long (255 is typical filesystem limit)
+        if len(filename) > 255:
+            name, ext = os.path.splitext(filename)
+            max_name_len = 255 - len(ext)
+            filename = name[:max_name_len] + ext
+        
+        # Ensure we have a valid filename
+        if not filename or filename in ['.', '..']:
+            filename = "document.pdf"
+        
+        return filename
+        
+    except Exception as e:
+        logger.error(f"Error cleaning filename: {e}")
+        return "document.pdf"
+
+
+def extract_text_features(text: str) -> Dict[str, Any]:
+    """
+    Extract features from text for better processing
     
-    # Ensure filename is not too long
-    if len(filename) > 255:
-        name, ext = os.path.splitext(filename)
-        max_name_len = 255 - len(ext)
-        filename = name[:max_name_len] + ext
-    
-    return filename
+    Args:
+        text: Input text
+        
+    Returns:
+        Dictionary of text features
+    """
+    try:
+        if not text:
+            return {"word_count": 0, "char_count": 0, "has_numbers": False, "has_special_chars": False}
+        
+        word_count = len(text.split())
+        char_count = len(text)
+        has_numbers = bool(re.search(r'\d', text))
+        has_special_chars = bool(re.search(r'[^\w\s]', text))
+        
+        # Detect if text might be a heading (short, title case, etc.)
+        is_likely_heading = (
+            word_count <= 10 and 
+            char_count <= 100 and 
+            text.istitle() and 
+            not text.endswith('.')
+        )
+        
+        return {
+            "word_count": word_count,
+            "char_count": char_count,
+            "has_numbers": has_numbers,
+            "has_special_chars": has_special_chars,
+            "is_likely_heading": is_likely_heading
+        }
+        
+    except Exception as e:
+        logger.error(f"Error extracting text features: {e}")
+        return {"word_count": 0, "char_count": 0, "has_numbers": False, "has_special_chars": False}
