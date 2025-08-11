@@ -343,60 +343,137 @@ class ChromaDBVectorStore(BaseVectorStore):
 
     async def store_document_chunks(self, pdf_filename: str, chunks: List[Dict[str, Any]], 
                                   file_hash: str) -> str:
-        """Store document chunks in ChromaDB"""
+        """Store document chunks in ChromaDB using enhanced methodology"""
         try:
             document_id = str(uuid.uuid4())
             
-            ids = []
-            embeddings = []
-            metadatas = []
-            documents = []
+            # Store text chunks in main collection
+            text_ids = []
+            text_embeddings = []
+            text_metadatas = []
+            text_documents = []
+            
+            # Store images in separate collection
+            image_ids = []
+            image_embeddings = []
+            image_metadatas = []
+            image_documents = []
             
             for i, chunk in enumerate(chunks):
                 if not chunk.get("text", "").strip():
                     continue
                     
-                # Generate embedding for the chunk
+                # Generate embedding for the chunk (heading + text)
                 combined_text = f"{chunk.get('heading', '')}\n{chunk['text']}"
                 embedding = await self.embedding_service.encode_text(combined_text)
                 
                 # Create unique ID for this chunk
                 chunk_id = f"{document_id}_chunk_{i}"
                 
-                # Prepare metadata
+                # Prepare metadata with enhanced structure
                 metadata = {
                     "document_id": document_id,
                     "pdf_filename": pdf_filename,
                     "file_hash": file_hash,
                     "chunk_index": i,
                     "heading": chunk.get("heading", ""),
-                    "images": json.dumps(chunk.get("images", [])),
+                    "images": ";".join(chunk.get("images", [])),  # Semicolon-separated
+                    "tables_count": json.dumps(chunk.get("tables", [])),
                     "upload_date": datetime.now().isoformat(),
                     "chunk_type": "text"
                 }
                 
-                ids.append(chunk_id)
-                embeddings.append(embedding.tolist())
-                metadatas.append(metadata)
-                documents.append(chunk["text"][:1000])  # Limit text length
+                text_ids.append(chunk_id)
+                text_embeddings.append(embedding.tolist())
+                text_metadatas.append(metadata)
+                text_documents.append(chunk["text"])
             
-            # Add to collection
+            # Add text chunks to main collection
             self.collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                metadatas=metadatas,
-                documents=documents
+                ids=text_ids,
+                embeddings=text_embeddings,
+                metadatas=text_metadatas,
+                documents=text_documents
             )
             
-            logger.info(f"Stored {len(ids)} chunks for {pdf_filename} in ChromaDB")
+            # Process and store images in separate collection
+            await self._store_images_separately(pdf_filename, chunks, document_id)
+            
+            logger.info(f"Stored {len(text_ids)} text chunks and images for {pdf_filename} in ChromaDB")
             return document_id
             
         except Exception as e:
             logger.error(f"Error storing document chunks in ChromaDB: {e}")
             raise
+    
+    async def _store_images_separately(self, pdf_filename: str, chunks: List[Dict[str, Any]], document_id: str):
+        """Store images in a separate ChromaDB collection with CLIP embeddings"""
+        try:
+            # Get or create image collection
+            image_collection = self.client.get_or_create_collection("image_collection")
+            
+            # Collect all unique images from chunks
+            all_images = set()
+            for chunk in chunks:
+                all_images.update(chunk.get("images", []))
+            
+            if not all_images:
+                logger.info("No images to store")
+                return
+            
+            # Initialize CLIP image embedder
+            try:
+                from sentence_transformers import SentenceTransformer
+                image_embedder = SentenceTransformer("clip-ViT-B-32")
+            except ImportError:
+                logger.warning("CLIP model not available, skipping image embeddings")
+                return
+            
+            # Process each image
+            for i, img_path in enumerate(all_images):
+                try:
+                    # Check if image exists
+                    if not os.path.exists(img_path):
+                        logger.warning(f"Image file not found: {img_path}")
+                        continue
+                    
+                    # Load and convert image
+                    from PIL import Image
+                    img = Image.open(img_path).convert("RGB")
+                    
+                    # Generate CLIP embedding
+                    img_embedding = image_embedder.encode(img).tolist()
+                    
+                    # Create image ID
+                    img_id = f"{document_id}_img_{i}"
+                    
+                    # Store in image collection
+                    image_collection.add(
+                        ids=[img_id],
+                        embeddings=[img_embedding],
+                        metadatas=[{
+                            "pdf_filename": pdf_filename,
+                            "document_id": document_id,
+                            "file_path": img_path,
+                            "upload_date": datetime.now().isoformat()
+                        }],
+                        documents=[f"[IMAGE] {img_path}"]
+                    )
+                    
+                    logger.info(f"Stored image {img_id}: {img_path}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing image {img_path}: {e}")
+                    continue
+            
+            logger.info(f"Stored {len(all_images)} images in separate collection")
+            
+        except Exception as e:
+            logger.error(f"Error storing images separately: {e}")
+            # Don't raise - image storage failure shouldn't break text storage
 
     async def search_pdf(self, pdf_filename: str, query: str, top_k: int = 5) -> Dict[str, Any]:
-        """Search for relevant content within a specific PDF"""
+        """Search for relevant content within a specific PDF using enhanced methodology"""
         try:
             # Generate query embedding
             query_embedding = await self.embedding_service.encode_text(query)
@@ -424,10 +501,19 @@ class ChromaDBVectorStore(BaseVectorStore):
                     # Convert distance to similarity score (ChromaDB uses L2 distance)
                     score = 1.0 / (1.0 + distance)
                     
-                    # Parse images from metadata
+                    # Parse images from metadata (semicolon-separated)
                     images = []
                     try:
-                        images = json.loads(metadata.get("images", "[]"))
+                        images_str = metadata.get("images", "")
+                        if images_str:
+                            images = [img.strip() for img in images_str.split(";") if img.strip()]
+                    except:
+                        pass
+                    
+                    # Parse tables from metadata
+                    tables = []
+                    try:
+                        tables = json.loads(metadata.get("tables_count", "[]"))
                     except:
                         pass
                     
@@ -437,6 +523,7 @@ class ChromaDBVectorStore(BaseVectorStore):
                         "heading": metadata.get("heading", ""),
                         "text": document,
                         "images": images,
+                        "tables": tables,
                         "chunk_index": metadata.get("chunk_index", 0)
                     })
             

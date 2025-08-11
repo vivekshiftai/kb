@@ -158,7 +158,9 @@ class PDFProcessor:
                         xref = img[0]
                         pix = fitz.Pixmap(doc, xref)
                         
+                        # Handle different color formats
                         if pix.n - pix.alpha < 4:  # GRAY or RGB
+                            # Can save directly as PNG
                             img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
                             img_path = os.path.join(output_dir, img_filename)
                             pix.save(img_path)
@@ -171,6 +173,27 @@ class PDFProcessor:
                                 "width": pix.width,
                                 "height": pix.height
                             })
+                        else:
+                            # CMYK or other formats - convert to RGB
+                            try:
+                                # Convert to RGB
+                                rgb_pix = fitz.Pixmap(fitz.csRGB, pix)
+                                img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
+                                img_path = os.path.join(output_dir, img_filename)
+                                rgb_pix.save(img_path)
+                                
+                                images.append({
+                                    "filename": img_filename,
+                                    "path": img_path,
+                                    "page_number": page_num + 1,
+                                    "image_index": img_index,
+                                    "width": rgb_pix.width,
+                                    "height": rgb_pix.height
+                                })
+                                
+                                rgb_pix = None
+                            except Exception as conv_error:
+                                logger.warning(f"Failed to convert image {img_index} from page {page_num + 1}: {conv_error}")
                         
                         pix = None
                         
@@ -185,40 +208,37 @@ class PDFProcessor:
 
     def _create_chunks(self, pages_content: List[Dict[str, Any]], 
                       images: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Create text chunks with associated images"""
+        """Create text chunks using PDF ToC titles for heading detection"""
         try:
             chunks = []
-            current_heading = "Introduction"
+            
+            # Extract PDF ToC titles for heading detection
+            pdf_titles = self._extract_pdf_toc_titles()
             
             for page_content in pages_content:
                 page_num = page_content["page_number"]
                 structured_content = page_content["structured_content"]
                 
-                # Group content by headings
+                # Group content by headings using PDF ToC titles
+                current_heading = "Introduction"
                 current_text = []
                 page_images = [img for img in images if img["page_number"] == page_num]
                 
                 for content in structured_content:
-                    if content["type"] == "heading" and len(content["text"]) > 5:
+                    # Check if content is a heading using PDF ToC titles
+                    if self._is_heading_by_toc(content["text"], pdf_titles):
                         # Save previous chunk if it has content
                         if current_text:
                             text = " ".join(current_text)
                             if text.strip():
-                                # Create chunks from the text
-                                text_chunks = chunk_text_with_overlap(
-                                    text, 
-                                    self.settings.CHUNK_MAX_LENGTH,
-                                    self.settings.CHUNK_OVERLAP
-                                )
-                                
-                                for i, chunk_text in enumerate(text_chunks):
-                                    chunks.append({
-                                        "heading": current_heading,
-                                        "text": chunk_text,
-                                        "page_number": page_num,
-                                        "chunk_index": len(chunks),
-                                        "images": [img["path"] for img in page_images] if i == 0 else []
-                                    })
+                                chunks.append({
+                                    "heading": current_heading,
+                                    "text": text,
+                                    "page_number": page_num,
+                                    "chunk_index": len(chunks),
+                                    "images": [img["path"] for img in page_images],
+                                    "tables": []  # Will be populated if tables are found
+                                })
                         
                         # Start new section
                         current_heading = content["text"]
@@ -230,23 +250,49 @@ class PDFProcessor:
                 if current_text:
                     text = " ".join(current_text)
                     if text.strip():
-                        text_chunks = chunk_text_with_overlap(
-                            text,
-                            self.settings.CHUNK_MAX_LENGTH,
-                            self.settings.CHUNK_OVERLAP
-                        )
-                        
-                        for i, chunk_text in enumerate(text_chunks):
-                            chunks.append({
-                                "heading": current_heading,
-                                "text": chunk_text,
-                                "page_number": page_num,
-                                "chunk_index": len(chunks),
-                                "images": [img["path"] for img in page_images] if i == 0 else []
-                            })
+                        chunks.append({
+                            "heading": current_heading,
+                            "text": text,
+                            "page_number": page_num,
+                            "chunk_index": len(chunks),
+                            "images": [img["path"] for img in page_images],
+                            "tables": []
+                        })
             
             return chunks
             
         except Exception as e:
             logger.error(f"Error creating chunks: {e}")
             return []
+    
+    def _extract_pdf_toc_titles(self) -> set:
+        """Extract PDF table of contents titles for heading detection"""
+        try:
+            toc = self.doc.get_toc()
+            pdf_titles = set(entry[1].strip() for entry in toc if entry[1].strip())
+            logger.info(f"Extracted {len(pdf_titles)} PDF ToC titles for heading detection")
+            return pdf_titles
+        except Exception as e:
+            logger.warning(f"Error extracting PDF ToC titles: {e}")
+            return set()
+    
+    def _is_heading_by_toc(self, text: str, pdf_titles: set) -> bool:
+        """Check if text is a heading by comparing with PDF ToC titles"""
+        import string
+        
+        def normalize_line(line):
+            """Normalize line for comparison"""
+            import re
+            line = re.sub(r'[\r\n\t]', ' ', line)
+            line = line.lower()
+            line = line.translate(str.maketrans('', '', string.punctuation))
+            line = re.sub(r'\s+', ' ', line)
+            return line.strip()
+        
+        normalized_text = normalize_line(text)
+        
+        for title in pdf_titles:
+            if normalized_text == normalize_line(title):
+                return True
+        
+        return False

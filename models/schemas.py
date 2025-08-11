@@ -66,3 +66,38 @@ class ErrorResponse(BaseModel):
     error: str
     details: Optional[Dict[str, Any]] = None
     timestamp: datetime
+
+class IoTDeviceRule(BaseModel):
+    """IoT device rule model"""
+    device_name: str
+    rule_type: str  # "monitoring", "maintenance", "alert", "control"
+    condition: str
+    action: str
+    priority: str = "medium"  # "low", "medium", "high", "critical"
+    frequency: Optional[str] = None  # "hourly", "daily", "weekly", "monthly"
+    description: str
+
+class MaintenanceData(BaseModel):
+    """Maintenance data model"""
+    component_name: str
+    maintenance_type: str  # "preventive", "corrective", "predictive"
+    frequency: str
+    last_maintenance: Optional[str] = None
+    next_maintenance: Optional[str] = None
+    description: str
+
+class RulesRequest(BaseModel):
+    """Request model for generating rules from PDF"""
+    pdf_filename: str = Field(..., description="Name of the PDF file to analyze")
+    chunk_size: Optional[int] = Field(10, description="Number of pages to process in each chunk", ge=1, le=50)
+    rule_types: Optional[List[str]] = Field(["monitoring", "maintenance", "alert"], description="Types of rules to generate")
+
+class RulesResponse(BaseModel):
+    """Response model for rules generation"""
+    pdf_filename: str
+    total_pages: int
+    processed_chunks: int
+    iot_rules: List[IoTDeviceRule]
+    maintenance_data: List[MaintenanceData]
+    processing_time: float
+    summary: str

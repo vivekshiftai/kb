@@ -15,14 +15,16 @@ from datetime import datetime
 
 from models.schemas import (
     QueryRequest, QueryResponse, PDFListResponse, PDFInfo,
-    UploadResponse, HealthResponse
+    UploadResponse, HealthResponse, RulesRequest, RulesResponse
 )
 from services.pdf_processor import PDFProcessor
 from services.vector_store import VectorStore
 from services.openai_client import OpenAIClient
+from services.rules_generator import RulesGenerator
 from config.settings import get_settings
 from utils.file_utils import ensure_directories, get_file_hash
 from utils.helpers import validate_pdf_file, clean_filename, format_file_size
+import shutil
 
 # Configure structured logging
 import structlog
@@ -70,6 +72,7 @@ settings = get_settings()
 pdf_processor = PDFProcessor()
 vector_store = VectorStore()
 openai_client = OpenAIClient()
+rules_generator = RulesGenerator()
 
 # Ensure required directories exist
 ensure_directories()
@@ -116,6 +119,7 @@ async def root():
             "upload": "/upload-pdf/",
             "list_pdfs": "/pdfs/",
             "query": "/query/",
+            "rules": "/rules/",
             "delete": "/pdfs/{filename}",
             "docs": "/docs",
             "images": "/images/"
@@ -260,6 +264,15 @@ async def upload_pdf(
             detail=f"Failed to process PDF upload: {str(e)}"
         )
 
+
+async def cleanup_temp_file(file_path: str):
+    """Clean up temporary file"""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Cleaned up temporary file: {file_path}")
+    except Exception as e:
+        logger.warning(f"Error cleaning up temporary file {file_path}: {e}")
 
 async def process_pdf_background(file_path: str, filename: str, file_hash: str):
     """Background task for PDF processing pipeline"""
@@ -469,6 +482,127 @@ async def query_pdf(request: QueryRequest):
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to process query: {str(e)}"
+        )
+
+
+@app.post("/rules/", response_model=RulesResponse, tags=["Rules Generation"])
+async def generate_rules(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(None, description="PDF file to analyze for rules generation"),
+    pdf_filename: str = None,
+    chunk_size: int = 10,
+    rule_types: List[str] = ["monitoring", "maintenance", "alert"]
+):
+    """
+    Generate IoT device rules and maintenance data from PDF content
+    
+    You can either:
+    1. Upload a new PDF file directly (file parameter)
+    2. Use an already uploaded PDF (pdf_filename parameter)
+    
+    - **file**: PDF file to upload and analyze (optional)
+    - **pdf_filename**: Name of already uploaded PDF file to analyze (optional)
+    - **chunk_size**: Number of pages to process in each chunk (default: 10)
+    - **rule_types**: Types of rules to generate (default: ["monitoring", "maintenance", "alert"])
+    
+    Processes the PDF in chunks and generates:
+    - IoT device monitoring and control rules
+    - Maintenance schedules and requirements
+    - Alert conditions and thresholds
+    """
+    try:
+        # Validate input
+        if not file and not pdf_filename:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'file' or 'pdf_filename' must be provided"
+            )
+        
+        if file and pdf_filename:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either 'file' or 'pdf_filename', not both"
+            )
+        
+        if file:
+            # Handle direct file upload
+            logger.info("Processing uploaded PDF for rules generation", 
+                       filename=file.filename,
+                       chunk_size=chunk_size,
+                       rule_types=rule_types)
+            
+            # Validate file
+            if not validate_pdf_file(file):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid PDF file. Please upload a valid PDF."
+                )
+            
+            # Save uploaded file temporarily
+            temp_filename = f"temp_rules_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{clean_filename(file.filename)}"
+            temp_path = os.path.join(settings.UPLOAD_DIR, temp_filename)
+            
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Generate rules from the uploaded file
+            result = await rules_generator.generate_rules_from_pdf(
+                pdf_filename=temp_filename,
+                chunk_size=chunk_size,
+                rule_types=rule_types,
+                pdf_file_path=temp_path
+            )
+            
+            # Clean up temporary file
+            background_tasks.add_task(cleanup_temp_file, temp_path)
+            
+        else:
+            # Use already uploaded PDF
+            logger.info("Generating rules from existing PDF", 
+                       filename=pdf_filename,
+                       chunk_size=chunk_size,
+                       rule_types=rule_types)
+            
+            # Check if PDF exists
+            pdf_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+            if not os.path.exists(pdf_path):
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"PDF '{pdf_filename}' not found"
+                )
+            
+            # Generate rules and maintenance data
+            result = await rules_generator.generate_rules_from_pdf(
+                pdf_filename=pdf_filename,
+                chunk_size=chunk_size,
+                rule_types=rule_types
+            )
+        
+        logger.info("Rules generation completed successfully", 
+                   filename=result["pdf_filename"],
+                   rules_count=len(result["iot_rules"]),
+                   maintenance_count=len(result["maintenance_data"]),
+                   processing_time=result["processing_time"])
+        
+        return RulesResponse(
+            pdf_filename=result["pdf_filename"],
+            total_pages=result["total_pages"],
+            processed_chunks=result["processed_chunks"],
+            iot_rules=result["iot_rules"],
+            maintenance_data=result["maintenance_data"],
+            processing_time=result["processing_time"],
+            summary=result["summary"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Rules generation failed", 
+                    filename=file.filename if file else pdf_filename,
+                    error=str(e))
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate rules: {str(e)}"
         )
 
 

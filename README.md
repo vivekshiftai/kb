@@ -101,6 +101,9 @@ The API will be available at:
 ### 🔍 Querying
 - `POST /query/` - Query specific PDFs with natural language
 
+### ⚙️ Rules Generation
+- `POST /rules/` - Generate IoT device rules and maintenance data from PDF content
+
 ### 🖼️ Static Files
 - `GET /images/{path}` - Serve extracted PDF images
 
@@ -179,6 +182,59 @@ curl -X POST "http://localhost:8000/query/" \
   ],
   "total_matches": 3,
   "processing_time": 0.85
+}
+```
+
+### Generate IoT Rules and Maintenance Data
+```bash
+curl -X POST "http://localhost:8000/rules/" \
+     -H "accept: application/json" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "pdf_filename": "equipment_manual.pdf",
+       "chunk_size": 10,
+       "rule_types": ["monitoring", "maintenance", "alert"]
+     }'
+```
+
+**Response:**
+```json
+{
+  "pdf_filename": "equipment_manual.pdf",
+  "total_pages": 45,
+  "processed_chunks": 5,
+  "iot_rules": [
+    {
+      "device_name": "Temperature Sensor T1",
+      "rule_type": "monitoring",
+      "condition": "Temperature exceeds 85°C",
+      "action": "Send alert to maintenance team",
+      "priority": "high",
+      "frequency": "hourly",
+      "description": "Monitor equipment temperature to prevent overheating"
+    },
+    {
+      "device_name": "Conveyor Belt Motor",
+      "rule_type": "maintenance",
+      "condition": "Operating hours reach 1000",
+      "action": "Schedule preventive maintenance",
+      "priority": "medium",
+      "frequency": "weekly",
+      "description": "Regular maintenance schedule for motor components"
+    }
+  ],
+  "maintenance_data": [
+    {
+      "component_name": "Filter Assembly",
+      "maintenance_type": "preventive",
+      "frequency": "Every 3 months",
+      "last_maintenance": "2024-01-15",
+      "next_maintenance": "2024-04-15",
+      "description": "Replace air filters to maintain optimal performance"
+    }
+  ],
+  "processing_time": 15.67,
+  "summary": "Generated 8 IoT monitoring rules and 5 maintenance schedules from 45-page equipment manual."
 }
 ```
 
