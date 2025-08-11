@@ -322,23 +322,26 @@ pytest --cov=. --cov-report=html
 # Run specific test file
 pytest tests/test_main.py -v
 
-# Test rules generation service
-python test_rules_api.py
+# Test API endpoints using curl or Postman
+curl -X GET "http://localhost:8000/health/"
 
-# Test logging configuration
-python test_logging.py
+# Test PDF upload
+curl -X POST "http://localhost:8000/upload-pdf/" \
+     -H "accept: application/json" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@your_document.pdf"
 
-# Test PDF processing logging
-python test_pdf_logging.py
+# Test querying
+curl -X POST "http://localhost:8000/query/" \
+     -H "accept: application/json" \
+     -H "Content-Type: application/json" \
+     -d '{"pdf_filename": "your_document.pdf", "query": "What is the maintenance schedule?"}'
 
-# Test application startup
-python test_app_startup.py
-
-# Run comprehensive tests (recommended for troubleshooting)
-python test_comprehensive.py
-
-# Run diagnostic and fix script (if having PDF processing issues)
-python fix_pdf_issues.py
+# Test rules generation
+curl -X POST "http://localhost:8000/rules/" \
+     -H "accept: application/json" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@your_document.pdf"
 ```
 
 ## 📊 Performance Features
@@ -481,33 +484,23 @@ LOG_LEVEL=DEBUG uvicorn main:app --reload
 
 If you're experiencing errors when adding PDFs:
 
-1. **Run the comprehensive test first:**
+1. **Check the application logs:**
    ```bash
-   python test_comprehensive.py
+   tail -f app.log
    ```
 
-2. **Check directory structure:**
+2. **Verify directory structure:**
    ```bash
-   python create_dirs.py
+   ls -la uploads/ outputs/ chroma_db/
    ```
 
-3. **Verify logging configuration:**
-   ```bash
-   python test_logging.py
-   ```
-
-4. **Test PDF processing specifically:**
-   ```bash
-   python test_pdf_logging.py
-   ```
-
-5. **Common PDF processing issues:**
-   - **Missing directories**: Run `python create_dirs.py`
-   - **Import errors**: Check if all dependencies are installed
-   - **Vector store issues**: Verify ChromaDB/Pinecone configuration
+3. **Common PDF processing issues:**
+   - **Missing directories**: Ensure `uploads/`, `outputs/`, and `chroma_db/` directories exist
+   - **Import errors**: Check if all dependencies are installed with `pip install -r requirements.txt`
+   - **Vector store issues**: Verify ChromaDB/Pinecone configuration in `.env`
    - **Logging errors**: Ensure structlog is properly configured
 
-6. **If errors persist:**
+4. **If errors persist:**
    - Check the `app.log` file for detailed error messages
    - Verify your `.env` file configuration
    - Ensure sufficient disk space for uploads and vector storage

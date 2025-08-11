@@ -30,14 +30,14 @@ import shutil
 # Configure structured logging
 import structlog
 from structlog.stdlib import ProcessorFormatter
-from structlog.processors import JSONRenderer, TimeStamper, add_logger_name, add_log_level
+from structlog.processors import JSONRenderer, TimeStamper
 
 # Configure structlog processors
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
-        add_logger_name,
-        add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
         TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
@@ -64,8 +64,8 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ProcessorFormatter(
     processor=JSONRenderer(),
     foreign_pre_chain=[
-        add_logger_name,
-        add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
         TimeStamper(fmt="iso"),
     ]
 ))
@@ -76,8 +76,8 @@ file_handler = logging.FileHandler('app.log')
 file_handler.setFormatter(ProcessorFormatter(
     processor=JSONRenderer(),
     foreign_pre_chain=[
-        add_logger_name,
-        add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
         TimeStamper(fmt="iso"),
     ]
 ))
@@ -354,22 +354,29 @@ async def cleanup_temp_file(file_path: str):
 async def process_pdf_background(file_path: str, filename: str, file_hash: str):
     """Background task for PDF processing pipeline"""
     try:
-        logger.info("🔄 Starting background PDF processing", filename=filename)
+        logger.info("🔄 Starting background PDF processing", 
+                   filename=filename,
+                   file_path=file_path,
+                   file_hash=file_hash[:8] + "...")
         processing_start = time.time()
         
         # Step 1: Process PDF (extract text, images, metadata)
-        logger.info("📄 Step 1: Extracting content from PDF", filename=filename)
+        logger.info("📄 Step 1: Extracting content from PDF", 
+                   filename=filename,
+                   step="content_extraction")
         processing_result = await pdf_processor.process_pdf(file_path, filename)
         
         logger.info("✅ PDF content extraction completed", 
                    filename=filename,
                    chunks=len(processing_result["chunks"]),
-                   images=processing_result.get("total_images", 0))
+                   images=processing_result.get("total_images", 0),
+                   step="content_extraction_complete")
         
         # Step 2: Store in vector database
         logger.info("🗄️ Step 2: Storing chunks in vector database", 
                    filename=filename,
-                   chunk_count=len(processing_result["chunks"]))
+                   chunk_count=len(processing_result["chunks"]),
+                   step="vector_storage")
         
         document_id = await vector_store.store_document_chunks(
             pdf_filename=filename,
@@ -379,7 +386,8 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
         
         logger.info("✅ Vector database storage completed", 
                    filename=filename,
-                   document_id=document_id)
+                   document_id=document_id,
+                   step="vector_storage_complete")
         
         processing_time = time.time() - processing_start
         
@@ -388,14 +396,18 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                    document_id=document_id,
                    total_chunks=len(processing_result["chunks"]),
                    total_images=processing_result.get("total_images", 0),
-                   processing_time=f"{processing_time:.2f}s")
+                   processing_time=f"{processing_time:.2f}s",
+                   step="pipeline_complete")
         
     except Exception as e:
         logger.error("❌ Background PDF processing failed", 
                     filename=filename, 
-                    error=str(e))
+                    error=str(e),
+                    step="pipeline_failed")
         import traceback
-        logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
+        logger.error("❌ Full error traceback:", 
+                    traceback=traceback.format_exc(),
+                    filename=filename)
 
 
 @app.get("/pdfs/", response_model=PDFListResponse, tags=["PDF Management"])
@@ -407,15 +419,30 @@ async def list_pdfs():
     """
     try:
         start_time = time.time()
+        logger.info("📋 Starting PDF list retrieval", step="list_start")
         
         # Get processed PDFs from vector store
+        logger.info("🔍 Querying vector store for processed PDFs", step="vector_store_query")
         pdf_filenames = await vector_store.list_processed_pdfs()
+        logger.info("✅ Retrieved PDF filenames from vector store", 
+                   count=len(pdf_filenames),
+                   filenames=pdf_filenames[:5],  # Log first 5 for debugging
+                   step="vector_store_query_complete")
         
         # Collect detailed information for each PDF
+        logger.info("📊 Collecting detailed information for each PDF", 
+                   step="detail_collection")
         pdf_infos = []
-        for filename in pdf_filenames:
+        for i, filename in enumerate(pdf_filenames):
             try:
+                logger.info(f"📄 Processing PDF {i+1}/{len(pdf_filenames)}", 
+                           filename=filename,
+                           step="individual_pdf_processing")
+                
                 stats = await vector_store.get_pdf_stats(filename)
+                logger.info(f"📈 Retrieved stats for {filename}", 
+                           stats=stats,
+                           step="stats_retrieved")
                 
                 # Get file info if available
                 file_path = os.path.join(settings.UPLOAD_DIR, filename)
@@ -425,6 +452,16 @@ async def list_pdfs():
                 if os.path.exists(file_path):
                     file_size = os.path.getsize(file_path)
                     upload_date = datetime.fromtimestamp(os.path.getmtime(file_path))
+                    logger.info(f"📁 File exists on disk", 
+                               filename=filename,
+                               file_size=file_size,
+                               upload_date=upload_date,
+                               step="file_info_retrieved")
+                else:
+                    logger.warning(f"⚠️ File not found on disk", 
+                                  filename=filename,
+                                  expected_path=file_path,
+                                  step="file_not_found")
                 
                 pdf_infos.append(PDFInfo(
                     filename=filename,
@@ -436,13 +473,15 @@ async def list_pdfs():
             except Exception as e:
                 logger.warning("Error getting PDF stats", 
                              filename=filename, 
-                             error=str(e))
+                             error=str(e),
+                             step="stats_error")
                 pdf_infos.append(PDFInfo(filename=filename))
         
         list_time = time.time() - start_time
-        logger.info("PDF list retrieved", 
+        logger.info("✅ PDF list retrieval completed", 
                    count=len(pdf_infos),
-                   processing_time=list_time)
+                   processing_time=list_time,
+                   step="list_complete")
         
         return PDFListResponse(
             pdfs=pdf_infos,
@@ -450,7 +489,9 @@ async def list_pdfs():
         )
         
     except Exception as e:
-        logger.error("Error listing PDFs", error=str(e))
+        logger.error("❌ Error listing PDFs", 
+                    error=str(e),
+                    step="list_error")
         raise HTTPException(
             status_code=500, 
             detail="Failed to retrieve PDF list"
