@@ -3,7 +3,7 @@ RAG PDF Processing API - Backend Only
 A high-performance FastAPI application for PDF processing and intelligent querying
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +28,17 @@ import shutil
 
 # Configure structured logging
 import structlog
+import logging
+
+# Configure standard logging to output to console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('app.log')
+    ]
+)
 
 structlog.configure(
     processors=[
@@ -87,13 +98,28 @@ app.mount("/images", StaticFiles(directory=images_dir), name="images")
 async def startup_event():
     """Initialize services on startup"""
     try:
-        logger.info("Starting RAG PDF Processing API...")
+        logger.info("🚀 Starting RAG PDF Processing API...")
+        logger.info("📋 Initializing services...")
+        
+        logger.info("🔧 Initializing vector store...")
         await vector_store.initialize()
-        logger.info("Application started successfully", 
+        logger.info("✅ Vector store initialized successfully")
+        
+        logger.info("🔧 Checking OpenAI client...")
+        openai_status = openai_client.check_connection()
+        logger.info(f"✅ OpenAI client status: {openai_status}")
+        
+        logger.info("🔧 Checking directories...")
+        ensure_directories()
+        logger.info("✅ Directories verified")
+        
+        logger.info("🎉 Application started successfully", 
                    version="2.0.0",
-                   pinecone_index=settings.PINECONE_INDEX_NAME)
+                   pinecone_index=settings.PINECONE_INDEX_NAME,
+                   upload_dir=settings.UPLOAD_DIR,
+                   output_dir=settings.OUTPUT_DIR)
     except Exception as e:
-        logger.error("Failed to start application", error=str(e))
+        logger.error("❌ Failed to start application", error=str(e))
         raise
 
 
@@ -184,55 +210,81 @@ async def upload_pdf(
     start_time = time.time()
     
     try:
+        logger.info("📤 Starting PDF upload process", filename=file.filename)
+        
         # Validate file type
+        logger.info("🔍 Validating file type...")
         if not file.filename or not file.filename.lower().endswith('.pdf'):
+            logger.warning("❌ Invalid file type uploaded", filename=file.filename)
             raise HTTPException(
                 status_code=400, 
                 detail="Only PDF files are allowed. Please upload a .pdf file."
             )
+        logger.info("✅ File type validation passed")
         
         # Clean and validate filename
+        logger.info("🔍 Cleaning filename...")
         clean_name = clean_filename(file.filename)
         if not clean_name:
+            logger.warning("❌ Invalid filename", original_name=file.filename)
             raise HTTPException(status_code=400, detail="Invalid filename")
+        logger.info("✅ Filename cleaned", original_name=file.filename, clean_name=clean_name)
         
         # Read and validate file size
+        logger.info("📏 Reading file content...")
         file_content = await file.read()
-        if len(file_content) > settings.MAX_FILE_SIZE:
+        file_size = len(file_content)
+        logger.info(f"📊 File size: {format_file_size(file_size)}")
+        
+        if file_size > settings.MAX_FILE_SIZE:
+            logger.warning("❌ File too large", 
+                          file_size=format_file_size(file_size),
+                          max_size=format_file_size(settings.MAX_FILE_SIZE))
             raise HTTPException(
                 status_code=413, 
                 detail=f"File too large. Maximum size: {format_file_size(settings.MAX_FILE_SIZE)}"
             )
+        logger.info("✅ File size validation passed")
         
         # Save uploaded file
+        logger.info("💾 Saving file to disk...")
         file_path = os.path.join(settings.UPLOAD_DIR, clean_name)
         with open(file_path, "wb") as buffer:
             buffer.write(file_content)
+        logger.info("✅ File saved successfully", path=file_path)
         
         # Validate PDF structure
+        logger.info("🔍 Validating PDF structure...")
         validation = validate_pdf_file(file_path)
         if not validation["valid"]:
+            logger.error("❌ PDF validation failed", error=validation['error'])
             os.remove(file_path)
             raise HTTPException(
                 status_code=400, 
                 detail=f"Invalid PDF file: {validation['error']}"
             )
+        logger.info("✅ PDF structure validation passed")
         
         # Generate file hash for deduplication
+        logger.info("🔐 Generating file hash...")
         file_hash = get_file_hash(file_path)
+        logger.info("✅ File hash generated", hash=file_hash[:8] + "...")
         
         # Check if PDF already processed
+        logger.info("🔍 Checking if PDF already processed...")
         processed_pdfs = await vector_store.list_processed_pdfs()
         if clean_name in processed_pdfs:
-            logger.info("PDF already processed", filename=clean_name)
+            logger.info("ℹ️ PDF already processed", filename=clean_name)
             return UploadResponse(
                 success=True,
                 message="PDF already processed and available for querying",
                 pdf_filename=clean_name,
                 processing_status="completed"
             )
+        logger.info("✅ PDF not previously processed")
         
         # Start background processing
+        logger.info("🚀 Starting background processing...")
         background_tasks.add_task(
             process_pdf_background,
             file_path,
@@ -241,10 +293,10 @@ async def upload_pdf(
         )
         
         upload_time = time.time() - start_time
-        logger.info("PDF upload successful", 
+        logger.info("🎉 PDF upload completed successfully", 
                    filename=clean_name,
-                   file_size=len(file_content),
-                   upload_time=upload_time)
+                   file_size=format_file_size(file_size),
+                   upload_time=f"{upload_time:.2f}s")
         
         return UploadResponse(
             success=True,
@@ -256,7 +308,7 @@ async def upload_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error uploading PDF", 
+        logger.error("❌ Error uploading PDF", 
                     filename=getattr(file, 'filename', 'unknown'),
                     error=str(e))
         raise HTTPException(
@@ -277,15 +329,20 @@ async def cleanup_temp_file(file_path: str):
 async def process_pdf_background(file_path: str, filename: str, file_hash: str):
     """Background task for PDF processing pipeline"""
     try:
-        logger.info("Starting background PDF processing", filename=filename)
+        logger.info("🔄 Starting background PDF processing", filename=filename)
         processing_start = time.time()
         
         # Step 1: Process PDF (extract text, images, metadata)
-        logger.info("Extracting content from PDF", filename=filename)
+        logger.info("📄 Step 1: Extracting content from PDF", filename=filename)
         processing_result = await pdf_processor.process_pdf(file_path, filename)
         
+        logger.info("✅ PDF content extraction completed", 
+                   filename=filename,
+                   chunks=len(processing_result["chunks"]),
+                   images=processing_result.get("total_images", 0))
+        
         # Step 2: Store in vector database
-        logger.info("Storing chunks in vector database", 
+        logger.info("🗄️ Step 2: Storing chunks in vector database", 
                    filename=filename,
                    chunk_count=len(processing_result["chunks"]))
         
@@ -295,19 +352,25 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
             file_hash=file_hash
         )
         
+        logger.info("✅ Vector database storage completed", 
+                   filename=filename,
+                   document_id=document_id)
+        
         processing_time = time.time() - processing_start
         
-        logger.info("PDF processing pipeline completed", 
+        logger.info("🎉 PDF processing pipeline completed successfully", 
                    filename=filename,
                    document_id=document_id,
                    total_chunks=len(processing_result["chunks"]),
                    total_images=processing_result.get("total_images", 0),
-                   processing_time=processing_time)
+                   processing_time=f"{processing_time:.2f}s")
         
     except Exception as e:
-        logger.error("Background PDF processing failed", 
+        logger.error("❌ Background PDF processing failed", 
                     filename=filename, 
                     error=str(e))
+        import traceback
+        logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
 
 
 @app.get("/pdfs/", response_model=PDFListResponse, tags=["PDF Management"])
@@ -491,7 +554,7 @@ async def generate_rules(
     file: UploadFile = File(None, description="PDF file to analyze for rules generation"),
     pdf_filename: str = None,
     chunk_size: int = 10,
-    rule_types: List[str] = ["monitoring", "maintenance", "alert"]
+    rule_types: str = Query("monitoring,maintenance,alert", description="Comma-separated rule types to generate")
 ):
     """
     Generate IoT device rules and maintenance data from PDF content
@@ -503,7 +566,7 @@ async def generate_rules(
     - **file**: PDF file to upload and analyze (optional)
     - **pdf_filename**: Name of already uploaded PDF file to analyze (optional)
     - **chunk_size**: Number of pages to process in each chunk (default: 10)
-    - **rule_types**: Types of rules to generate (default: ["monitoring", "maintenance", "alert"])
+    - **rule_types**: Comma-separated rule types to generate (default: "monitoring,maintenance,alert")
     
     Processes the PDF in chunks and generates:
     - IoT device monitoring and control rules
@@ -511,78 +574,100 @@ async def generate_rules(
     - Alert conditions and thresholds
     """
     try:
+        logger.info("🤖 Starting IoT rules generation process")
+        
         # Validate input
+        logger.info("🔍 Validating input parameters...")
         if not file and not pdf_filename:
+            logger.error("❌ No file or pdf_filename provided")
             raise HTTPException(
                 status_code=400,
                 detail="Either 'file' or 'pdf_filename' must be provided"
             )
         
         if file and pdf_filename:
+            logger.error("❌ Both file and pdf_filename provided")
             raise HTTPException(
                 status_code=400,
                 detail="Provide either 'file' or 'pdf_filename', not both"
             )
+        logger.info("✅ Input validation passed")
+        
+        # Parse rule_types from comma-separated string
+        logger.info("🔧 Parsing rule types...")
+        rule_types_list = [rt.strip() for rt in rule_types.split(",") if rt.strip()]
+        logger.info(f"📋 Rule types to generate: {rule_types_list}")
         
         if file:
             # Handle direct file upload
-            logger.info("Processing uploaded PDF for rules generation", 
+            logger.info("📤 Processing uploaded PDF for rules generation", 
                        filename=file.filename,
                        chunk_size=chunk_size,
-                       rule_types=rule_types)
+                       rule_types=rule_types_list)
             
             # Validate file
+            logger.info("🔍 Validating uploaded file...")
             if not validate_pdf_file(file):
+                logger.error("❌ Invalid PDF file uploaded", filename=file.filename)
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid PDF file. Please upload a valid PDF."
                 )
+            logger.info("✅ File validation passed")
             
             # Save uploaded file temporarily
+            logger.info("💾 Saving uploaded file temporarily...")
             temp_filename = f"temp_rules_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{clean_filename(file.filename)}"
             temp_path = os.path.join(settings.UPLOAD_DIR, temp_filename)
             
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
+            logger.info("✅ Temporary file saved", path=temp_path)
             
             # Generate rules from the uploaded file
+            logger.info("🚀 Starting rules generation from uploaded file...")
             result = await rules_generator.generate_rules_from_pdf(
                 pdf_filename=temp_filename,
                 chunk_size=chunk_size,
-                rule_types=rule_types,
+                rule_types=rule_types_list,
                 pdf_file_path=temp_path
             )
             
             # Clean up temporary file
+            logger.info("🧹 Scheduling temporary file cleanup...")
             background_tasks.add_task(cleanup_temp_file, temp_path)
             
         else:
             # Use already uploaded PDF
-            logger.info("Generating rules from existing PDF", 
+            logger.info("📄 Generating rules from existing PDF", 
                        filename=pdf_filename,
                        chunk_size=chunk_size,
-                       rule_types=rule_types)
+                       rule_types=rule_types_list)
             
             # Check if PDF exists
+            logger.info("🔍 Checking if PDF exists...")
             pdf_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
             if not os.path.exists(pdf_path):
+                logger.error("❌ PDF file not found", filename=pdf_filename, path=pdf_path)
                 raise HTTPException(
                     status_code=404, 
                     detail=f"PDF '{pdf_filename}' not found"
                 )
+            logger.info("✅ PDF file found")
             
             # Generate rules and maintenance data
+            logger.info("🚀 Starting rules generation from existing PDF...")
             result = await rules_generator.generate_rules_from_pdf(
                 pdf_filename=pdf_filename,
                 chunk_size=chunk_size,
-                rule_types=rule_types
+                rule_types=rule_types_list
             )
         
-        logger.info("Rules generation completed successfully", 
+        logger.info("🎉 Rules generation completed successfully", 
                    filename=result["pdf_filename"],
                    rules_count=len(result["iot_rules"]),
                    maintenance_count=len(result["maintenance_data"]),
-                   processing_time=result["processing_time"])
+                   processing_time=f"{result['processing_time']:.2f}s")
         
         return RulesResponse(
             pdf_filename=result["pdf_filename"],
@@ -597,9 +682,11 @@ async def generate_rules(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Rules generation failed", 
+        logger.error("❌ Rules generation failed", 
                     filename=file.filename if file else pdf_filename,
                     error=str(e))
+        import traceback
+        logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to generate rules: {str(e)}"

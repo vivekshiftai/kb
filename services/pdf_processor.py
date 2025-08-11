@@ -20,24 +20,41 @@ class PDFProcessor:
     async def process_pdf(self, pdf_path: str, filename: str) -> Dict[str, Any]:
         """Process PDF and extract text, images, and metadata"""
         try:
-            logger.info(f"Starting PDF processing for {filename}")
+            logger.info(f"📄 Starting PDF processing for {filename}")
+            processing_start = datetime.now()
             
             # Extract text and metadata
+            logger.info("📖 Opening PDF document...")
             doc = fitz.open(pdf_path)
+            logger.info(f"✅ PDF opened successfully", total_pages=doc.page_count)
             
             # Extract metadata
+            logger.info("📋 Extracting PDF metadata...")
             metadata = self._extract_metadata(doc, pdf_path)
+            logger.info("✅ Metadata extraction completed", 
+                       title=metadata.get("title", "N/A"),
+                       author=metadata.get("author", "N/A"),
+                       page_count=metadata.get("page_count", 0))
             
             # Extract text content
+            logger.info("📝 Extracting text content from pages...")
             text_content = self._extract_text_content(doc)
+            logger.info(f"✅ Text extraction completed", pages_processed=len(text_content))
             
             # Extract images
+            logger.info("🖼️ Extracting images from PDF...")
             images = await self._extract_images(doc, filename)
+            logger.info(f"✅ Image extraction completed", images_found=len(images))
             
             # Create chunks
+            logger.info("🔧 Creating content chunks...")
             chunks = self._create_chunks(text_content, images)
+            logger.info(f"✅ Chunking completed", total_chunks=len(chunks))
             
             doc.close()
+            logger.info("✅ PDF document closed")
+            
+            processing_time = (datetime.now() - processing_start).total_seconds()
             
             result = {
                 "filename": filename,
@@ -48,11 +65,16 @@ class PDFProcessor:
                 "processing_date": datetime.now().isoformat()
             }
             
-            logger.info(f"PDF processing completed for {filename}: {len(chunks)} chunks, {len(images)} images")
+            logger.info(f"🎉 PDF processing completed successfully for {filename}", 
+                       total_chunks=len(chunks), 
+                       total_images=len(images),
+                       processing_time=f"{processing_time:.2f}s")
             return result
             
         except Exception as e:
-            logger.error(f"Error processing PDF {filename}: {e}")
+            logger.error(f"❌ Error processing PDF {filename}: {e}")
+            import traceback
+            logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
             raise
 
     def _extract_metadata(self, doc: fitz.Document, pdf_path: str) -> Dict[str, Any]:

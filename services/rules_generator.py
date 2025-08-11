@@ -32,57 +32,93 @@ class RulesGenerator:
             rule_types = ["monitoring", "maintenance", "alert"]
             
         try:
+            logger.info("🤖 Starting IoT rules generation from PDF", 
+                       filename=pdf_filename, 
+                       chunk_size=chunk_size, 
+                       rule_types=rule_types)
             start_time = datetime.now()
             
             # Get PDF file path - support both uploaded files and direct file paths
+            logger.info("🔍 Determining PDF file path...")
             if pdf_file_path:
                 pdf_path = pdf_file_path
+                logger.info("✅ Using provided file path", path=pdf_file_path)
             else:
                 pdf_path = f"{self.settings.UPLOAD_DIR}/{pdf_filename}"
+                logger.info("✅ Using upload directory path", path=pdf_path)
             
             # Open PDF and get total pages
+            logger.info("📄 Opening PDF document...")
             doc = fitz.open(pdf_path)
             total_pages = doc.page_count
-            
-            logger.info(f"Processing PDF {pdf_filename} with {total_pages} pages in chunks of {chunk_size}")
+            logger.info(f"✅ PDF opened successfully", total_pages=total_pages, filename=pdf_filename)
             
             all_rules = []
             all_maintenance_data = []
             processed_chunks = 0
             
+            # Calculate total chunks
+            total_chunks = (total_pages + chunk_size - 1) // chunk_size
+            logger.info(f"📊 Processing {total_pages} pages in {total_chunks} chunks of {chunk_size} pages each")
+            
             # Process PDF in chunks
             for start_page in range(0, total_pages, chunk_size):
                 end_page = min(start_page + chunk_size, total_pages)
                 chunk_pages = list(range(start_page, end_page))
+                chunk_num = processed_chunks + 1
                 
-                logger.info(f"Processing chunk {processed_chunks + 1}: pages {start_page + 1}-{end_page}")
+                logger.info(f"🔄 Processing chunk {chunk_num}/{total_chunks}: pages {start_page + 1}-{end_page}")
                 
                 # Extract text from this chunk
+                logger.info(f"📝 Extracting text from chunk {chunk_num}...")
                 chunk_text = await self._extract_chunk_text(doc, chunk_pages)
                 
                 if chunk_text.strip():
+                    logger.info(f"✅ Text extracted from chunk {chunk_num}", text_length=len(chunk_text))
+                    
                     # Generate rules for this chunk
+                    logger.info(f"🔧 Generating IoT rules for chunk {chunk_num}...")
                     chunk_rules = await self._generate_chunk_rules(chunk_text, rule_types)
                     all_rules.extend(chunk_rules)
+                    logger.info(f"✅ Generated {len(chunk_rules)} rules from chunk {chunk_num}")
                     
                     # Extract maintenance data for this chunk
+                    logger.info(f"🔧 Extracting maintenance data for chunk {chunk_num}...")
                     chunk_maintenance = await self._extract_maintenance_data(chunk_text)
                     all_maintenance_data.extend(chunk_maintenance)
+                    logger.info(f"✅ Extracted {len(chunk_maintenance)} maintenance records from chunk {chunk_num}")
+                else:
+                    logger.warning(f"⚠️ No text content found in chunk {chunk_num}")
                 
                 processed_chunks += 1
                 
             doc.close()
+            logger.info("✅ PDF document closed")
             
             # Remove duplicates and consolidate
+            logger.info("🔍 Removing duplicate rules and maintenance data...")
             unique_rules = self._deduplicate_rules(all_rules)
             unique_maintenance = self._deduplicate_maintenance(all_maintenance_data)
+            logger.info(f"✅ Deduplication completed", 
+                       original_rules=len(all_rules), 
+                       unique_rules=len(unique_rules),
+                       original_maintenance=len(all_maintenance_data),
+                       unique_maintenance=len(unique_maintenance))
             
             # Generate summary
+            logger.info("📝 Generating summary...")
             summary = await self._generate_summary(unique_rules, unique_maintenance, total_pages)
+            logger.info("✅ Summary generated")
             
             processing_time = (datetime.now() - start_time).total_seconds()
             
-            logger.info(f"Generated {len(unique_rules)} rules and {len(unique_maintenance)} maintenance records")
+            logger.info(f"🎉 Rules generation completed successfully", 
+                       filename=pdf_filename,
+                       total_pages=total_pages,
+                       processed_chunks=processed_chunks,
+                       total_rules=len(unique_rules),
+                       total_maintenance=len(unique_maintenance),
+                       processing_time=f"{processing_time:.2f}s")
             
             return {
                 "pdf_filename": pdf_filename,
@@ -95,55 +131,71 @@ class RulesGenerator:
             }
             
         except Exception as e:
-            logger.error(f"Error generating rules from PDF {pdf_filename}: {e}")
+            logger.error(f"❌ Error generating rules from PDF {pdf_filename}: {e}")
+            import traceback
+            logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
             raise
     
     async def _extract_chunk_text(self, doc: fitz.Document, page_numbers: List[int]) -> str:
         """Extract text from specific pages"""
         try:
+            logger.debug(f"📝 Extracting text from pages: {[p+1 for p in page_numbers]}")
             text_chunks = []
             
             for page_num in page_numbers:
                 page = doc[page_num]
                 text = page.get_text()
                 text_chunks.append(f"Page {page_num + 1}:\n{text}")
+                logger.debug(f"📄 Page {page_num + 1}: {len(text)} characters")
             
-            return "\n\n".join(text_chunks)
+            combined_text = "\n\n".join(text_chunks)
+            logger.debug(f"📊 Total text extracted: {len(combined_text)} characters")
+            return combined_text
             
         except Exception as e:
-            logger.error(f"Error extracting text from pages {page_numbers}: {e}")
+            logger.error(f"❌ Error extracting text from pages {page_numbers}: {e}")
             return ""
     
     async def _generate_chunk_rules(self, text: str, rule_types: List[str]) -> List[IoTDeviceRule]:
         """Generate IoT rules from text chunk using OpenAI"""
         try:
+            logger.debug(f"🔧 Creating rules prompt for {len(rule_types)} rule types")
             prompt = self._create_rules_prompt(text, rule_types)
             
+            logger.debug("🤖 Calling OpenAI for rules generation...")
             response = await self.openai_client.generate_response(prompt)
+            logger.debug("✅ OpenAI response received", response_length=len(response))
             
             # Parse the response to extract rules
+            logger.debug("🔍 Parsing OpenAI response for rules...")
             rules = self._parse_rules_response(response)
+            logger.debug(f"✅ Parsed {len(rules)} rules from response")
             
             return rules
             
         except Exception as e:
-            logger.error(f"Error generating rules from text chunk: {e}")
+            logger.error(f"❌ Error generating rules from text chunk: {e}")
             return []
     
     async def _extract_maintenance_data(self, text: str) -> List[MaintenanceData]:
         """Extract maintenance data from text chunk using OpenAI"""
         try:
+            logger.debug("🔧 Creating maintenance data prompt")
             prompt = self._create_maintenance_prompt(text)
             
+            logger.debug("🤖 Calling OpenAI for maintenance data extraction...")
             response = await self.openai_client.generate_response(prompt)
+            logger.debug("✅ OpenAI response received", response_length=len(response))
             
             # Parse the response to extract maintenance data
+            logger.debug("🔍 Parsing OpenAI response for maintenance data...")
             maintenance_data = self._parse_maintenance_response(response)
+            logger.debug(f"✅ Parsed {len(maintenance_data)} maintenance records from response")
             
             return maintenance_data
             
         except Exception as e:
-            logger.error(f"Error extracting maintenance data from text chunk: {e}")
+            logger.error(f"❌ Error extracting maintenance data from text chunk: {e}")
             return []
     
     def _create_rules_prompt(self, text: str, rule_types: List[str]) -> str:

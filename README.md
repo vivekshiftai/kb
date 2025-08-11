@@ -5,19 +5,22 @@ A high-performance FastAPI backend application that processes PDF documents and 
 ## 🚀 Features
 
 - **PDF Upload & Processing**: Upload PDF files and extract text, images, and metadata
-- **Vector Database Storage**: Store processed content in Pinecone with PDF-specific namespaces
+- **Vector Database Storage**: Store processed content in Pinecone with graceful fallback to ChromaDB
 - **Intelligent Querying**: Query specific PDFs using natural language with OpenAI's LLM
+- **IoT Rules Generation**: Generate IoT device rules and maintenance data from PDF content
+- **Advanced PDF Processing**: ToC-based semantic chunking with separate text and image collections
 - **Image Extraction & Serving**: Extract and serve images from PDF documents via static URLs
 - **RESTful API**: Clean, well-documented API endpoints with OpenAPI/Swagger docs
 - **Performance Optimized**: Target response times < 1s with async processing
 - **Comprehensive Logging**: Structured JSON logging for monitoring and debugging
 - **Background Processing**: Non-blocking PDF processing with status tracking
+- **Graceful Fallback**: Automatic fallback from Pinecone to ChromaDB on connection issues
 
 ## 📋 Prerequisites
 
 - Python 3.8+
 - OpenAI API key
-- Pinecone API key and environment
+- Pinecone API key and environment (optional - falls back to ChromaDB)
 - 4GB+ RAM recommended for PDF processing
 
 ## 🛠️ Installation
@@ -45,10 +48,13 @@ OPENAI_MODEL=gpt-3.5-turbo
 OPENAI_MAX_TOKENS=1500
 OPENAI_TEMPERATURE=0.7
 
-# Pinecone Configuration
+# Pinecone Configuration (Optional - falls back to ChromaDB if not available)
 PINECONE_API_KEY=your_pinecone_api_key_here
 PINECONE_ENVIRONMENT=us-east-1-aws
 PINECONE_INDEX_NAME=pdf-rag-index
+
+# ChromaDB Configuration (Fallback vector database)
+CHROMA_PERSIST_DIRECTORY=./chroma_db
 
 # File Processing
 UPLOAD_DIR=./uploads
@@ -67,7 +73,12 @@ LOG_LEVEL=INFO
 ### 3. Create Required Directories
 
 ```bash
-mkdir -p uploads outputs
+mkdir -p uploads outputs chroma_db
+```
+
+Or run the helper script:
+```bash
+python create_dirs.py
 ```
 
 ## 🚀 Running the Application
@@ -186,15 +197,29 @@ curl -X POST "http://localhost:8000/query/" \
 ```
 
 ### Generate IoT Rules and Maintenance Data
+
+**Option 1: Using an already uploaded PDF**
 ```bash
 curl -X POST "http://localhost:8000/rules/" \
      -H "accept: application/json" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "pdf_filename": "equipment_manual.pdf",
-       "chunk_size": 10,
-       "rule_types": ["monitoring", "maintenance", "alert"]
-     }'
+     -H "Content-Type: multipart/form-data" \
+     -F "pdf_filename=equipment_manual.pdf" \
+     -F "chunk_size=10" \
+     -F "rule_types=monitoring" \
+     -F "rule_types=maintenance" \
+     -F "rule_types=alert"
+```
+
+**Option 2: Direct PDF upload for rules generation**
+```bash
+curl -X POST "http://localhost:8000/rules/" \
+     -H "accept: application/json" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@equipment_manual.pdf" \
+     -F "chunk_size=10" \
+     -F "rule_types=monitoring" \
+     -F "rule_types=maintenance" \
+     -F "rule_types=alert"
 ```
 
 **Response:**
@@ -243,8 +268,9 @@ curl -X POST "http://localhost:8000/rules/" \
 ### Core Components
 
 - **FastAPI Application** (`main.py`): Main API server with all endpoints
-- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata
-- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations
+- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata with ToC-based chunking
+- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations with ChromaDB fallback
+- **Rules Generator** (`services/rules_generator.py`): Generates IoT rules and maintenance data
 - **Embedding Service** (`services/embeddings.py`): Generates text embeddings
 - **OpenAI Client** (`services/openai_client.py`): Handles LLM interactions
 
@@ -256,10 +282,13 @@ curl -X POST "http://localhost:8000/rules/" \
 
 ### Vector Database Design
 
-- **Pinecone Index**: Single index with PDF-specific namespaces
+- **Primary**: Pinecone Index with PDF-specific namespaces
+- **Fallback**: ChromaDB with separate collections for text and images
 - **Namespace Format**: `pdf_{filename_without_extension}`
-- **Metadata**: Includes heading, text, images, page numbers, chunk indices
-- **Embeddings**: 384-dimensional vectors from sentence-transformers
+- **Metadata**: Includes heading, text, images, page numbers, chunk indices, tables count
+- **Text Embeddings**: 384-dimensional vectors from sentence-transformers
+- **Image Embeddings**: CLIP embeddings for visual content (ChromaDB only)
+- **Chunking Strategy**: ToC-based semantic chunking for better context preservation
 
 ## 🧪 Testing
 
@@ -275,15 +304,21 @@ pytest --cov=. --cov-report=html
 
 # Run specific test file
 pytest tests/test_main.py -v
+
+# Test rules generation service
+python test_rules_api.py
 ```
 
 ## 📊 Performance Features
 
 - **Async Processing**: Background PDF processing for non-blocking uploads
-- **Efficient Chunking**: Smart text chunking with sentence boundary detection
-- **Batch Operations**: Batch vector upserts to Pinecone
+- **Advanced Chunking**: ToC-based semantic chunking for better context preservation
+- **Dual Vector Storage**: Pinecone with ChromaDB fallback for reliability
+- **Separate Collections**: Text and image embeddings stored separately in ChromaDB
+- **Batch Operations**: Batch vector upserts to vector databases
 - **Response Optimization**: Target < 1s query response times
 - **Memory Management**: Efficient handling of large PDFs
+- **Image Processing**: CLIP embeddings for visual content analysis
 
 ## 🔧 Configuration Options
 
@@ -292,8 +327,9 @@ Key environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key | Required |
-| `PINECONE_API_KEY` | Pinecone API key | Required |
+| `PINECONE_API_KEY` | Pinecone API key | Optional (falls back to ChromaDB) |
 | `PINECONE_ENVIRONMENT` | Pinecone environment | `us-east-1-aws` |
+| `CHROMA_PERSIST_DIRECTORY` | ChromaDB storage directory | `./chroma_db` |
 | `CHUNK_MAX_LENGTH` | Maximum chunk size | `1000` |
 | `CHUNK_OVERLAP` | Overlap between chunks | `200` |
 | `MAX_FILE_SIZE` | Maximum PDF file size | `50MB` |
@@ -316,6 +352,29 @@ Log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`
 - **Input Sanitization**: Clean filenames and text inputs
 - **CORS Configuration**: Configurable CORS settings
 - **Error Handling**: Secure error messages without sensitive data
+
+## 🤖 Rules Generation Features
+
+The application includes advanced IoT rules generation capabilities:
+
+### **IoT Device Rules**
+- **Monitoring Rules**: Device state monitoring and threshold detection
+- **Maintenance Rules**: Preventive and predictive maintenance schedules
+- **Alert Rules**: Condition-based alerting and notifications
+- **Control Rules**: Automated device control and response actions
+
+### **Maintenance Data Extraction**
+- **Component Information**: Device and component identification
+- **Maintenance Schedules**: Frequency and timing requirements
+- **Service History**: Last and next maintenance dates
+- **Procedures**: Detailed maintenance procedures and requirements
+
+### **Processing Capabilities**
+- **Chunk-based Processing**: Processes PDFs in configurable page chunks (default: 10 pages)
+- **Dual Input Methods**: Direct file upload or use existing uploaded PDFs
+- **Intelligent Deduplication**: Removes duplicate rules and maintenance entries
+- **Comprehensive Summaries**: Provides overview of generated content
+- **Multiple Rule Types**: Configurable rule type generation
 
 ## 🚀 Deployment
 
@@ -363,16 +422,23 @@ This project is licensed under the MIT License - see the LICENSE file for detail
    - Verify API key and environment settings
    - Check network connectivity
    - Ensure index exists or can be created
+   - Application will automatically fall back to ChromaDB
 
 2. **PDF Processing Failures**
    - Check PDF file integrity
    - Verify file size limits
    - Ensure sufficient disk space
+   - Check for image extraction errors (CMYK color space issues)
 
 3. **OpenAI API Errors**
    - Verify API key validity
    - Check rate limits and quotas
    - Monitor token usage
+
+4. **Rules Generation Issues**
+   - Ensure PDF contains relevant technical content
+   - Check OpenAI API quota for large documents
+   - Verify chunk size settings for optimal processing
 
 ### Debug Mode
 ```bash

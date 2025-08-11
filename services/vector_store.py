@@ -80,14 +80,18 @@ class PineconeVectorStore(BaseVectorStore):
             raise ImportError("Pinecone client not available")
             
         try:
+            logger.info("🔧 Initializing Pinecone client...")
             # Initialize Pinecone client
             self.pc = Pinecone(api_key=self.settings.PINECONE_API_KEY)
+            logger.info("✅ Pinecone client initialized")
             
             # Create index if it doesn't exist
+            logger.info("🔍 Checking existing Pinecone indexes...")
             existing_indexes = [index.name for index in self.pc.list_indexes()]
+            logger.info(f"📋 Found {len(existing_indexes)} existing indexes")
             
             if self.settings.PINECONE_INDEX_NAME not in existing_indexes:
-                logger.info(f"Creating Pinecone index: {self.settings.PINECONE_INDEX_NAME}")
+                logger.info(f"🏗️ Creating Pinecone index: {self.settings.PINECONE_INDEX_NAME}")
                 self.pc.create_index(
                     name=self.settings.PINECONE_INDEX_NAME,
                     dimension=self.settings.EMBEDDING_DIMENSION,
@@ -98,11 +102,16 @@ class PineconeVectorStore(BaseVectorStore):
                     )
                 )
                 # Wait for index to be ready
+                logger.info("⏳ Waiting for Pinecone index to be ready...")
                 await asyncio.sleep(10)
+                logger.info("✅ Pinecone index is ready")
+            else:
+                logger.info(f"✅ Pinecone index already exists: {self.settings.PINECONE_INDEX_NAME}")
             
             # Connect to index
+            logger.info("🔗 Connecting to Pinecone index...")
             self.index = self.pc.Index(self.settings.PINECONE_INDEX_NAME)
-            logger.info("Pinecone initialized successfully")
+            logger.info("✅ Pinecone initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize Pinecone: {e}")
@@ -297,8 +306,10 @@ class ChromaDBVectorStore(BaseVectorStore):
             raise ImportError("ChromaDB client not available")
             
         try:
+            logger.info("🔧 Initializing ChromaDB client...")
             # Ensure persist directory exists
             os.makedirs(self.settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
+            logger.info(f"✅ Persist directory ready: {self.settings.CHROMA_PERSIST_DIRECTORY}")
             
             # Initialize ChromaDB client
             self.client = chromadb.PersistentClient(
@@ -307,21 +318,23 @@ class ChromaDBVectorStore(BaseVectorStore):
                     anonymized_telemetry=False
                 )
             )
+            logger.info("✅ ChromaDB client initialized")
             
             # Get or create collection
+            logger.info("📚 Setting up ChromaDB collection...")
             try:
                 self.collection = self.client.get_collection(
                     name=self.settings.CHROMA_COLLECTION_NAME
                 )
-                logger.info(f"Using existing ChromaDB collection: {self.settings.CHROMA_COLLECTION_NAME}")
+                logger.info(f"✅ Using existing ChromaDB collection: {self.settings.CHROMA_COLLECTION_NAME}")
             except:
                 self.collection = self.client.create_collection(
                     name=self.settings.CHROMA_COLLECTION_NAME,
                     metadata={"description": "PDF RAG collection"}
                 )
-                logger.info(f"Created new ChromaDB collection: {self.settings.CHROMA_COLLECTION_NAME}")
+                logger.info(f"✅ Created new ChromaDB collection: {self.settings.CHROMA_COLLECTION_NAME}")
             
-            logger.info("ChromaDB initialized successfully")
+            logger.info("✅ ChromaDB initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
@@ -606,26 +619,26 @@ class VectorStore:
         # Try Pinecone first if configured
         if self.settings.use_pinecone and PINECONE_AVAILABLE:
             try:
-                logger.info("Attempting to initialize Pinecone vector store")
+                logger.info("🔧 Attempting to initialize Pinecone vector store")
                 self._store = PineconeVectorStore(self.embedding_service)
                 await self._store.initialize()
                 self._store_type = "pinecone"
-                logger.info("Pinecone vector store initialized successfully")
+                logger.info("✅ Pinecone vector store initialized successfully")
                 return
             except Exception as e:
-                logger.warning(f"Failed to initialize Pinecone: {e}. Falling back to ChromaDB.")
+                logger.warning(f"⚠️ Failed to initialize Pinecone: {e}. Falling back to ChromaDB.")
                 # Reset store to try ChromaDB
                 self._store = None
         
         # Fallback to ChromaDB
         if CHROMADB_AVAILABLE:
-            logger.info("Initializing ChromaDB vector store (fallback)")
+            logger.info("🔄 Initializing ChromaDB vector store (fallback)")
             self._store = ChromaDBVectorStore(self.embedding_service)
             await self._store.initialize()
             self._store_type = "chromadb"
-            logger.info("ChromaDB vector store initialized successfully")
+            logger.info("✅ ChromaDB vector store initialized successfully")
         else:
-            raise RuntimeError("No vector store available. Please install either Pinecone or ChromaDB.")
+            raise RuntimeError("❌ No vector store available. Please install either Pinecone or ChromaDB.")
     
     async def initialize(self):
         """Initialize the vector store"""
