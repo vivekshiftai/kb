@@ -74,7 +74,7 @@ brew install \
 pip3 install "mineru[core]==2.1.0"
 
 # Install additional required dependencies
-pip3 install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3 sglang==0.1.0
+pip3 install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3
 ```
 
 #### 3. Set Up Python Environment
