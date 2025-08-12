@@ -86,6 +86,15 @@ class MaintenanceData(BaseModel):
     next_maintenance: Optional[str] = None
     description: str
 
+class SafetyPrecaution(BaseModel):
+    """Safety precaution model"""
+    category: str  # "electrical safety", "mechanical safety", "chemical safety", "fire safety", "personal protection"
+    precaution: str
+    equipment: Optional[str] = None  # Required safety equipment or PPE
+    procedure: Optional[str] = None  # Safety procedure or protocol
+    warning_level: str = "medium"  # "low", "medium", "high", "critical"
+    description: str
+
 class RulesRequest(BaseModel):
     """Request model for generating rules from PDF"""
     pdf_filename: str = Field(..., description="Name of the PDF file to analyze")
@@ -99,5 +108,6 @@ class RulesResponse(BaseModel):
     processed_chunks: int
     iot_rules: List[IoTDeviceRule]
     maintenance_data: List[MaintenanceData]
+    safety_precautions: List[SafetyPrecaution]
     processing_time: float
     summary: str

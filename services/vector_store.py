@@ -64,6 +64,10 @@ class BaseVectorStore:
     async def get_pdf_stats(self, pdf_filename: str) -> Dict[str, Any]:
         """Get statistics for a specific PDF"""
         raise NotImplementedError
+    
+    async def get_all_chunks_for_pdf(self, pdf_filename: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a specific PDF"""
+        raise NotImplementedError
 
 
 class PineconeVectorStore(BaseVectorStore):
@@ -290,6 +294,37 @@ class PineconeVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Error getting PDF stats from Pinecone: {e}")
             return {"pdf_filename": pdf_filename, "vector_count": 0, "store_type": "pinecone"}
+
+    async def get_all_chunks_for_pdf(self, pdf_filename: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a specific PDF from Pinecone"""
+        try:
+            namespace = f"pdf_{pdf_filename.replace('.pdf', '').replace(' ', '_')}"
+            
+            # Query all vectors in the namespace
+            query_response = self.index.query(
+                vector=[0.0] * self.settings.EMBEDDING_DIMENSION,  # Dummy vector
+                top_k=10000,  # Large number to get all chunks
+                include_metadata=True,
+                namespace=namespace
+            )
+            
+            chunks = []
+            for match in query_response.matches:
+                metadata = match.metadata
+                chunks.append({
+                    "text": metadata.get("text", ""),
+                    "heading": metadata.get("heading", ""),
+                    "page_number": metadata.get("page_number"),
+                    "images": json.loads(metadata.get("images", "[]")),
+                    "score": match.score
+                })
+            
+            logger.info(f"Retrieved {len(chunks)} chunks for PDF {pdf_filename} from Pinecone")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error getting all chunks for PDF {pdf_filename} from Pinecone: {e}")
+            return []
 
 
 class ChromaDBVectorStore(BaseVectorStore):
@@ -643,6 +678,55 @@ class ChromaDBVectorStore(BaseVectorStore):
                         step="stats_error")
             return {"pdf_filename": pdf_filename, "vector_count": 0, "store_type": "chromadb"}
 
+    async def get_all_chunks_for_pdf(self, pdf_filename: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a specific PDF from ChromaDB"""
+        try:
+            logger.info(f"📊 Getting all chunks for PDF", 
+                       pdf_filename=pdf_filename,
+                       step="chunks_query_start")
+            
+            # Get all documents and filter by pdf_filename
+            results = self.collection.get(
+                where={"pdf_filename": pdf_filename},
+                include=["metadatas", "documents"]
+            )
+            
+            chunks = []
+            if results and 'ids' in results:
+                for i, doc_id in enumerate(results['ids']):
+                    metadata = results['metadatas'][i] if 'metadatas' in results else {}
+                    document = results['documents'][i] if 'documents' in results else ""
+                    
+                    # Parse images from metadata
+                    images = []
+                    if metadata.get("images"):
+                        try:
+                            images = json.loads(metadata.get("images", "[]"))
+                        except:
+                            images = []
+                    
+                    chunks.append({
+                        "text": document,
+                        "heading": metadata.get("heading", ""),
+                        "page_number": metadata.get("page_number"),
+                        "images": images,
+                        "score": 1.0  # Default score for retrieved chunks
+                    })
+            
+            logger.info(f"📈 Retrieved {len(chunks)} chunks for PDF", 
+                       pdf_filename=pdf_filename,
+                       chunk_count=len(chunks),
+                       step="chunks_query_complete")
+            
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting all chunks for PDF from ChromaDB", 
+                        pdf_filename=pdf_filename,
+                        error=str(e),
+                        step="chunks_error")
+            return []
+
 
 class VectorStore:
     """Main vector store service with automatic fallback logic"""
@@ -720,6 +804,11 @@ class VectorStore:
         """Get statistics for a specific PDF"""
         await self._initialize_store()
         return await self._store.get_pdf_stats(pdf_filename)
+    
+    async def get_all_chunks_for_pdf(self, pdf_filename: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a specific PDF"""
+        await self._initialize_store()
+        return await self._store.get_all_chunks_for_pdf(pdf_filename)
     
     @property
     def store_type(self) -> str:

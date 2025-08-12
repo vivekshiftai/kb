@@ -16,7 +16,7 @@ from datetime import datetime
 
 from models.schemas import (
     QueryRequest, QueryResponse, PDFListResponse, PDFInfo,
-    UploadResponse, HealthResponse, RulesRequest, RulesResponse
+    UploadResponse, HealthResponse, RulesRequest, RulesResponse, SafetyPrecaution
 )
 from services.pdf_processor import PDFProcessor
 from services.vector_store import VectorStore
@@ -521,7 +521,7 @@ async def query_pdf(request: QueryRequest):
                 detail=f"PDF '{request.pdf_filename}' not found. Available PDFs: {available_pdfs}"
             )
         
-        # Perform similarity search
+        # Perform similarity search - get top 9 chunks
         logger.info("Performing similarity search", 
                    pdf_filename=request.pdf_filename,
                    query=request.query[:100])
@@ -529,7 +529,7 @@ async def query_pdf(request: QueryRequest):
         search_results = await vector_store.search_pdf(
             pdf_filename=request.pdf_filename,
             query=request.query,
-            top_k=request.max_results
+            top_k=9  # Fixed to 9 chunks
         )
         
         # Handle no results case
@@ -548,20 +548,29 @@ async def query_pdf(request: QueryRequest):
                 processing_time=no_results_time
             )
         
-        # Generate AI response
+        # Generate AI response with chunk identification
         logger.info("Generating AI response", 
                    matches=len(search_results["matches"]))
         
         context_chunks = [match["text"] for match in search_results["matches"]]
-        openai_response = await openai_client.generate_response(
+        openai_response = await openai_client.generate_response_with_chunk_identification(
             question=request.query,
             context_chunks=context_chunks,
             pdf_filename=request.pdf_filename
         )
         
-        # Format results with accessible image URLs
+        # Extract used chunk indices from LLM response
+        used_chunk_indices = openai_response.get("used_chunk_indices", [])
+        
+        # Filter results to only include chunks that were actually used
+        used_matches = []
+        for i, match in enumerate(search_results["matches"]):
+            if i in used_chunk_indices:
+                used_matches.append(match)
+        
+        # Format results with accessible image URLs (only for used chunks)
         formatted_results = []
-        for match in search_results["matches"]:
+        for match in used_matches:
             # Process image paths to URLs
             image_infos = []
             for img_path in match.get("images", []):
@@ -589,7 +598,8 @@ async def query_pdf(request: QueryRequest):
         logger.info("Query completed successfully", 
                    pdf_filename=request.pdf_filename,
                    query_preview=request.query[:50],
-                   matches=len(formatted_results),
+                   total_chunks_retrieved=len(search_results["matches"]),
+                   chunks_used=len(used_matches),
                    processing_time=query_time)
         
         return QueryResponse(
@@ -597,7 +607,7 @@ async def query_pdf(request: QueryRequest):
             query=request.query,
             answer=openai_response["answer"],
             results=formatted_results,
-            total_matches=search_results["total_matches"],
+            total_matches=len(used_matches),
             processing_time=query_time
         )
         
@@ -619,7 +629,7 @@ async def generate_rules(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(None, description="PDF file to analyze for rules generation"),
     pdf_filename: str = None,
-    chunk_size: int = 10,
+    chunk_size: int = 30,
     rule_types: str = Query("monitoring,maintenance,alert", description="Comma-separated rule types to generate")
 ):
     """
@@ -631,10 +641,10 @@ async def generate_rules(
     
     - **file**: PDF file to upload and analyze (optional)
     - **pdf_filename**: Name of already uploaded PDF file to analyze (optional)
-    - **chunk_size**: Number of pages to process in each chunk (default: 10)
+    - **chunk_size**: Number of chunks to process in each batch (default: 30)
     - **rule_types**: Comma-separated rule types to generate (default: "monitoring,maintenance,alert")
     
-    Processes the PDF in chunks and generates:
+    Processes the PDF using vector database chunks and generates:
     - IoT device monitoring and control rules
     - Maintenance schedules and requirements
     - Alert conditions and thresholds
@@ -733,6 +743,7 @@ async def generate_rules(
                    filename=result["pdf_filename"],
                    rules_count=len(result["iot_rules"]),
                    maintenance_count=len(result["maintenance_data"]),
+                   safety_count=len(result["safety_precautions"]),
                    processing_time=f"{result['processing_time']:.2f}s")
         
         return RulesResponse(
@@ -741,6 +752,7 @@ async def generate_rules(
             processed_chunks=result["processed_chunks"],
             iot_rules=result["iot_rules"],
             maintenance_data=result["maintenance_data"],
+            safety_precautions=result["safety_precautions"],
             processing_time=result["processing_time"],
             summary=result["summary"]
         )
