@@ -42,9 +42,12 @@ collection = client.get_or_create_collection(
 
 **Migration Steps:**
 ```bash
-# Update MinerU
+# Update MinerU with core dependencies
 pip uninstall mineru
-pip install mineru==2.1.0
+pip install "mineru[core]==2.1.0"
+
+# Install additional dependencies
+pip install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3
 
 # Test new version
 mineru --version
@@ -246,7 +249,11 @@ cp -r ./minieu_output_backup ./minieu_output
 # Downgrade packages
 pip install fastapi==0.104.1
 pip install chromadb==0.4.18
-pip install mineru==0.1.0
+pip install "mineru[core]==0.1.0"
+pip install huggingface_hub==0.16.4
+pip install sentence-transformers==2.2.2
+pip install pdf2image==1.16.3
+pip install PyMuPDF==1.23.8
 ```
 
 ## 📞 Support

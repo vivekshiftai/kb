@@ -252,6 +252,7 @@ async def debug_minieu_status():
             "minieu_output_dir": minieu_dir,
             "exists": os.path.exists(minieu_dir),
             "minieu_available": minieu_processor.check_minieu_availability(),
+            "minieu_version": minieu_processor.get_minieu_version(),
             "pdfs_processed": []
         }
         
@@ -380,10 +381,15 @@ async def debug_query_test():
         try:
             md_collection = client.get_collection("md_heading_chunks")
         except Exception as e:
-            # Fallback for ChromaDB v1.0.x
-            md_collection = client.get_collection(
-                name="md_heading_chunks"
-            )
+            logger.warning(f"⚠️ Primary ChromaDB collection retrieval failed, trying v1.0.x format: {e}")
+            try:
+                # Fallback for ChromaDB v1.0.x
+                md_collection = client.get_collection(
+                    name="md_heading_chunks"
+                )
+            except Exception as e2:
+                logger.error(f"❌ ChromaDB collection retrieval failed with both methods: {e2}")
+                raise HTTPException(status_code=500, detail=f"ChromaDB collection retrieval failed: {e2}")
         
         # Perform a simple search
         search_results = md_collection.query(
@@ -444,8 +450,9 @@ async def health_check():
             logger.warning("ChromaDB health check failed", error=str(e))
             chromadb_status = False
         
-        # Check Minieu availability
+        # Check Minieu availability and version
         minieu_status = minieu_processor.check_minieu_availability()
+        minieu_version = minieu_processor.get_minieu_version()
         
         health_time = time.time() - start_time
         
@@ -678,11 +685,16 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
         try:
             md_collection = client.get_or_create_collection("md_heading_chunks")
         except Exception as e:
-            # Fallback for ChromaDB v1.0.x
-            md_collection = client.get_or_create_collection(
-                name="md_heading_chunks",
-                metadata={"hnsw:space": "cosine"}
-            )
+            logger.warning(f"⚠️ Primary ChromaDB collection creation failed, trying v1.0.x format: {e}")
+            try:
+                # Fallback for ChromaDB v1.0.x
+                md_collection = client.get_or_create_collection(
+                    name="md_heading_chunks",
+                    metadata={"hnsw:space": "cosine"}
+                )
+            except Exception as e2:
+                logger.error(f"❌ ChromaDB collection creation failed with both methods: {e2}")
+                raise Exception(f"ChromaDB collection creation failed: {e2}")
         
         # Store chunks in ChromaDB
         from sentence_transformers import SentenceTransformer
@@ -886,11 +898,16 @@ async def query_pdf(request: QueryRequest):
         try:
             md_collection = client.get_or_create_collection("md_heading_chunks")
         except Exception as e:
-            # Fallback for ChromaDB v1.0.x
-            md_collection = client.get_or_create_collection(
-                name="md_heading_chunks",
-                metadata={"hnsw:space": "cosine"}
-            )
+            logger.warning(f"⚠️ Primary ChromaDB collection creation failed, trying v1.0.x format: {e}")
+            try:
+                # Fallback for ChromaDB v1.0.x
+                md_collection = client.get_or_create_collection(
+                    name="md_heading_chunks",
+                    metadata={"hnsw:space": "cosine"}
+                )
+            except Exception as e2:
+                logger.error(f"❌ ChromaDB collection creation failed with both methods: {e2}")
+                raise Exception(f"ChromaDB collection creation failed: {e2}")
         
         # Perform semantic search
         logger.info("🔍 Performing semantic search on markdown chunks...", 

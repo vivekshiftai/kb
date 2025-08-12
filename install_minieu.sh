@@ -26,9 +26,13 @@ sudo apt-get install -y \
     curl \
     wget
 
-# Install MinerU (updated to v2.1.0)
-echo "🤖 Installing MinerU v2.1.0..."
-pip3 install mineru==2.1.0
+# Install MinerU with core dependencies (updated to v2.1.0)
+echo "🤖 Installing MinerU v2.1.0 with core dependencies..."
+pip3 install "mineru[core]==2.1.0"
+
+# Install additional required dependencies
+echo "📦 Installing additional dependencies..."
+pip3 install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3 sglang==0.1.0
 
 # Verify Minieu installation
 echo "✅ Verifying Minieu installation..."

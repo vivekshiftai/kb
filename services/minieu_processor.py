@@ -47,29 +47,60 @@ class MinieuProcessor:
             logger.info(f"🚀 Calling Minieu to process {filename}...", 
                        step="minieu_call")
             
-            # Minieu command: mineru process <pdf_path> --output <output_dir>
+            # MinerU v2.1.0 command: mineru process -p <pdf_path> --output <output_dir>
+            # The new version requires -p/--path option
             cmd = [
-                "mineru", "process", pdf_path, 
+                "mineru", "process", 
+                "-p", pdf_path,
+                "--output", self.settings.MINIEU_OUTPUT_DIR
+            ]
+            
+            # Alternative command format with --path
+            fallback_cmd = [
+                "mineru", "process", 
+                "--path", pdf_path,
                 "--output", self.settings.MINIEU_OUTPUT_DIR
             ]
             
             logger.info(f"📋 Minieu command: {' '.join(cmd)}")
             
-            # Run Minieu process
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                logger.error(f"❌ Minieu processing failed for {filename}", 
-                           returncode=process.returncode,
-                           stderr=stderr.decode() if stderr else "No error output",
-                           step="minieu_failed")
-                raise Exception(f"Minieu processing failed: {stderr.decode() if stderr else 'Unknown error'}")
+            # Run MinerU process with fallback for v2.1.0
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode != 0:
+                    logger.warning(f"⚠️ Primary MinerU command failed, trying fallback for {filename}", 
+                               returncode=process.returncode,
+                               stderr=stderr.decode() if stderr else "No error output",
+                               step="minieu_fallback")
+                    
+                    # Try fallback command for v2.1.0
+                    process = await asyncio.create_subprocess_exec(
+                        *fallback_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    
+                    stdout, stderr = await process.communicate()
+                    
+                    if process.returncode != 0:
+                        logger.error(f"❌ MinerU processing failed for {filename}", 
+                                   returncode=process.returncode,
+                                   stderr=stderr.decode() if stderr else "No error output",
+                                   step="minieu_failed")
+                        raise Exception(f"MinerU processing failed: {stderr.decode() if stderr else 'Unknown error'}")
+                else:
+                    logger.info(f"✅ Primary MinerU command succeeded for {filename}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error running MinerU process for {filename}", error=str(e))
+                raise
             
             logger.info(f"✅ Minieu processing completed for {filename}", 
                        stdout=stdout.decode() if stdout else "No output",
@@ -135,7 +166,7 @@ class MinieuProcessor:
             return None
     
     def check_minieu_availability(self) -> bool:
-        """Check if Minieu is available in the system"""
+        """Check if MinerU is available in the system"""
         try:
             result = subprocess.run(
                 ["mineru", "--version"], 
@@ -144,11 +175,31 @@ class MinieuProcessor:
                 timeout=10
             )
             if result.returncode == 0:
-                logger.info(f"✅ Minieu is available: {result.stdout.strip()}")
+                version_info = result.stdout.strip()
+                logger.info(f"✅ MinerU is available: {version_info}")
+                
+                # Check if it's v2.1.0 or higher
+                if "2.1.0" in version_info or "2." in version_info:
+                    logger.info("✅ MinerU v2.x detected - using enhanced features")
+                else:
+                    logger.warning("⚠️ MinerU v1.x detected - some features may not be available")
+                
                 return True
             else:
-                logger.warning(f"⚠️ Minieu not available: {result.stderr}")
+                logger.warning(f"⚠️ MinerU not available: {result.stderr}")
                 return False
         except Exception as e:
-            logger.error(f"❌ Error checking Minieu availability: {e}")
+            logger.error(f"❌ Error checking MinerU availability: {e}")
             return False
+    
+    def get_minieu_version(self) -> str:
+        """Get MinerU version string"""
+        try:
+            result = subprocess.run(["mineru", "--version"], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                return "Unknown"
+        except Exception as e:
+            logger.error(f"❌ Error getting MinerU version: {e}")
+            return "Error"
