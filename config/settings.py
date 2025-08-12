@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     VECTOR_STORE_TYPE: str = Field(default="chromadb", env="VECTOR_STORE_TYPE")
     USE_PINECONE: bool = Field(default=False, env="USE_PINECONE")
     
+    # Embedding Settings
+    TEXT_EMBEDDING_MODEL: str = Field(default="all-MiniLM-L6-v2", env="TEXT_EMBEDDING_MODEL")
+    EMBEDDING_DIMENSION: int = Field(default=384, env="EMBEDDING_DIMENSION")
+    
     # Pinecone Settings
     PINECONE_API_KEY: Optional[str] = Field(default=None, env="PINECONE_API_KEY")
     PINECONE_ENVIRONMENT: Optional[str] = Field(default=None, env="PINECONE_ENVIRONMENT")
@@ -51,6 +55,7 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str = Field(default="localhost", env="CHROMADB_HOST")
     CHROMADB_PORT: int = Field(default=8000, env="CHROMADB_PORT")
     CHROMADB_PERSIST_DIRECTORY: str = Field(default="./chromadb", env="CHROMADB_PERSIST_DIRECTORY")
+    CHROMA_COLLECTION_NAME: str = Field(default="pdf_collection", env="CHROMA_COLLECTION_NAME")
     
     # OpenAI Settings
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")

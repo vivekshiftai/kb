@@ -3,7 +3,7 @@ RAG PDF Processing API - Backend Only
 A high-performance FastAPI application for PDF processing and intelligent querying
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,68 +24,23 @@ from services.pdf_processor import PDFProcessor
 from services.openai_client import OpenAIClient
 from services.rules_generator import RulesGenerator
 from services.minieu_processor import MinieuProcessor
+from services.chromadb_manager import ChromaDBManager
 from config.settings import get_settings
 from utils.file_utils import ensure_directories, get_file_hash
 from utils.helpers import validate_pdf_file, clean_filename, format_file_size
 import shutil
 
-# Configure structured logging
-import structlog
-from structlog.stdlib import ProcessorFormatter
-from structlog.processors import JSONRenderer, TimeStamper
-
-# Configure structlog processors
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
+# Configure simple logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('app.log')
+    ]
 )
 
-# Configure standard library logging to use structlog's formatter
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-
-# Remove any existing handlers to avoid duplicates
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-
-# Stream handler for console output
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(ProcessorFormatter(
-    processor=JSONRenderer(),
-    foreign_pre_chain=[
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        TimeStamper(fmt="iso"),
-    ]
-))
-root_logger.addHandler(stream_handler)
-
-# File handler for app.log
-file_handler = logging.FileHandler('app.log')
-file_handler.setFormatter(ProcessorFormatter(
-    processor=JSONRenderer(),
-    foreign_pre_chain=[
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        TimeStamper(fmt="iso"),
-    ]
-))
-root_logger.addHandler(file_handler)
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -111,6 +66,7 @@ pdf_processor = PDFProcessor()
 openai_client = OpenAIClient()
 rules_generator = RulesGenerator()
 minieu_processor = MinieuProcessor()
+chromadb_manager = ChromaDBManager()
 
 # Ensure required directories exist
 ensure_directories()
@@ -484,7 +440,6 @@ async def health_check():
 
 @app.post("/upload-pdf/", response_model=UploadResponse, tags=["PDF Management"])
 async def upload_pdf(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="PDF file to upload and process")
 ):
     """
@@ -556,11 +511,13 @@ async def upload_pdf(
         file_hash = get_file_hash(file_path)
         logger.info("✅ File hash generated", hash=file_hash[:8] + "...")
         
-        # Check if PDF already processed in Minieu output
-        logger.info("🔍 Checking if PDF already processed in Minieu output...")
+        # Check if PDF already processed in Minieu output and ChromaDB
+        logger.info("🔍 Checking if PDF already processed...")
         pdf_name = os.path.splitext(clean_name)[0]
         minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
         
+        # Check Minieu output
+        minieu_processed = False
         if os.path.exists(minieu_output_dir):
             # Check if auto directory exists
             auto_dir = None
@@ -579,13 +536,22 @@ async def upload_pdf(
                         break
             
             if auto_dir:
-                logger.info("ℹ️ PDF already processed in Minieu output", filename=clean_name)
-                return UploadResponse(
-                    success=True,
-                    message="PDF already processed and available for querying",
-                    pdf_filename=clean_name,
-                    processing_status="completed"
-                )
+                minieu_processed = True
+                logger.info("✅ PDF already processed in Minieu output", filename=clean_name)
+        
+        # Check ChromaDB
+        chromadb_processed = chromadb_manager.collection_exists(pdf_name)
+        if chromadb_processed:
+            logger.info("✅ PDF already processed in ChromaDB", filename=clean_name)
+        
+        # If both Minieu and ChromaDB are processed, return success
+        if minieu_processed and chromadb_processed:
+            return UploadResponse(
+                success=True,
+                message="PDF already processed and available for querying",
+                pdf_filename=clean_name,
+                processing_status="completed"
+            )
         
         logger.info("✅ PDF not previously processed")
         
@@ -595,27 +561,43 @@ async def upload_pdf(
             logger.info(f"📋 The PDF will be uploaded but processing will fail until Minieu output is available")
             logger.info(f"📋 Expected Minieu output location: {minieu_output_dir}")
         
-        # Start background processing
-        logger.info("🚀 Starting background processing...")
-        background_tasks.add_task(
-            process_pdf_background,
-            file_path,
-            clean_name,
-            file_hash
-        )
-        
-        upload_time = time.time() - start_time
-        logger.info("🎉 PDF upload completed successfully", 
-                   filename=clean_name,
-                   file_size=format_file_size(file_size),
-                   upload_time=f"{upload_time:.2f}s")
-        
-        return UploadResponse(
-            success=True,
-            message="PDF uploaded successfully. Processing started in background.",
-            pdf_filename=clean_name,
-            processing_status="processing"
-        )
+        # Process PDF immediately (no background task)
+        logger.info("🚀 Starting immediate PDF processing...")
+        try:
+            processing_result = await process_pdf_background(file_path, clean_name, file_hash)
+            
+            upload_time = time.time() - start_time
+            logger.info("🎉 PDF upload and processing completed successfully", 
+                       filename=clean_name,
+                       file_size=format_file_size(file_size),
+                       upload_time=f"{upload_time:.2f}s")
+            
+            return UploadResponse(
+                success=True,
+                message="PDF uploaded and processed successfully.",
+                pdf_filename=clean_name,
+                processing_status="completed"
+            )
+        except Exception as processing_error:
+            logger.error("❌ Error processing PDF", 
+                        filename=clean_name,
+                        error=str(processing_error))
+            
+            # Clean up the uploaded file if processing failed
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"🧹 Cleaned up failed upload: {file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"⚠️ Failed to clean up file: {cleanup_error}")
+            
+            upload_time = time.time() - start_time
+            return UploadResponse(
+                success=False,
+                message=f"PDF uploaded but processing failed: {str(processing_error)}",
+                pdf_filename=clean_name,
+                processing_status="processing_failed"
+            )
         
     except HTTPException:
         raise
@@ -676,46 +658,12 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                    chunk_count=len(processing_result["chunks"]),
                    step="vector_storage")
         
-        # Initialize ChromaDB client
+        # Store chunks using ChromaDB manager
         pdf_name = os.path.splitext(filename)[0]
-        chromadb_path = f"./chroma_db_{pdf_name}"
-        client = chromadb.PersistentClient(path=chromadb_path)
+        storage_success = chromadb_manager.store_chunks(pdf_name, processing_result["chunks"])
         
-        # Get or create collection for markdown chunks (ChromaDB v1.0.x compatible)
-        try:
-            md_collection = client.get_or_create_collection("md_heading_chunks")
-        except Exception as e:
-            logger.warning(f"⚠️ Primary ChromaDB collection creation failed, trying v1.0.x format: {e}")
-            try:
-                # Fallback for ChromaDB v1.0.x
-                md_collection = client.get_or_create_collection(
-                    name="md_heading_chunks",
-                    metadata={"hnsw:space": "cosine"}
-                )
-            except Exception as e2:
-                logger.error(f"❌ ChromaDB collection creation failed with both methods: {e2}")
-                raise Exception(f"ChromaDB collection creation failed: {e2}")
-        
-        # Store chunks in ChromaDB
-        from sentence_transformers import SentenceTransformer
-        text_embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        
-        for i, chunk in enumerate(processing_result["chunks"]):
-            combined_text = f"{chunk['heading']}\n{chunk['text']}"
-            embedding = text_embedder.encode(combined_text).tolist()
-            
-            md_collection.add(
-                ids=[f"md-{i}"],
-                embeddings=[embedding],
-                metadatas=[{
-                    "heading": chunk["heading"],
-                    "images": ";".join(chunk["images"]),
-                    "tables_count": len(chunk.get("tables", [])),
-                    "page_number": chunk.get("page_number", 1),
-                    "source_file": chunk.get("source_file", filename)
-                }],
-                documents=[chunk["text"]]
-            )
+        if not storage_success:
+            raise Exception("Failed to store chunks in ChromaDB")
         
         logger.info("✅ ChromaDB storage completed", 
                    filename=filename,
@@ -753,75 +701,51 @@ async def list_pdfs():
         start_time = time.time()
         logger.info("📋 Starting PDF list retrieval", step="list_start")
         
-        # Get processed PDFs from Minieu output directory
-        logger.info("🔍 Scanning Minieu output directory for processed PDFs", step="minieu_scan")
+        # Get processed PDFs from ChromaDB collections
+        logger.info("🔍 Scanning ChromaDB collections for processed PDFs", step="chromadb_scan")
         pdf_infos = []
         
-        if os.path.exists(settings.MINIEU_OUTPUT_DIR):
-            for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
-                item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
-                if os.path.isdir(item_path):
-                    # Check if this directory has a subdirectory with 'auto'
-                    auto_found = False
-                    auto_path = None
-                    for subitem in os.listdir(item_path):
-                        subitem_path = os.path.join(item_path, subitem)
-                        if os.path.isdir(subitem_path):
-                            auto_check = os.path.join(subitem_path, "auto")
-                            if os.path.exists(auto_check):
-                                auto_found = True
-                                auto_path = auto_check
-                                break
-                    
-                    if auto_found:
-                        filename = f"{item}.pdf"
-                        logger.info(f"📄 Found processed PDF: {filename}", step="pdf_found")
-                        
-                        try:
-                            # Get file info if available
-                            file_path = os.path.join(settings.UPLOAD_DIR, filename)
-                            file_size = None
-                            upload_date = None
-                            
-                            if os.path.exists(file_path):
-                                file_size = os.path.getsize(file_path)
-                                upload_date = datetime.fromtimestamp(os.path.getmtime(file_path))
-                                logger.info(f"📁 File exists on disk", 
-                                           filename=filename,
-                                           file_size=file_size,
-                                           upload_date=upload_date,
-                                           step="file_info_retrieved")
-                            else:
-                                logger.warning(f"⚠️ File not found on disk", 
-                                               filename=filename,
-                                               expected_path=file_path,
-                                               step="file_not_found")
-                            
-                            # Get chunk count from ChromaDB
-                            chunk_count = 0
-                            try:
-                                chromadb_path = f"./chroma_db_{item}"
-                                if os.path.exists(chromadb_path):
-                                    client = chromadb.PersistentClient(path=chromadb_path)
-                                    md_collection = client.get_collection("md_heading_chunks")
-                                    chunk_count = md_collection.count()
-                                    logger.info(f"📈 Retrieved chunk count for {filename}: {chunk_count}")
-                            except Exception as e:
-                                logger.warning(f"Could not get chunk count for {filename}: {e}")
-                            
-                            pdf_infos.append(PDFInfo(
-                                filename=filename,
-                                chunk_count=chunk_count,
-                                file_size=file_size,
-                                upload_date=upload_date
-                            ))
-                            
-                        except Exception as e:
-                            logger.warning("Error processing PDF info", 
-                                         filename=filename, 
-                                         error=str(e),
-                                         step="pdf_info_error")
-                            pdf_infos.append(PDFInfo(filename=filename))
+        # Get all PDF collections from ChromaDB
+        pdf_collections = chromadb_manager.list_collections()
+        
+        for collection_name in pdf_collections:
+            # Extract PDF name from collection name (format: pdf_<pdf_name>)
+            pdf_name = collection_name.replace("pdf_", "")
+            pdf_filename = f"{pdf_name}.pdf"
+            
+            # Get collection stats
+            stats = chromadb_manager.get_collection_stats(pdf_name)
+            
+            # Check if Minieu output exists
+            minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+            minieu_processed = os.path.exists(minieu_output_dir)
+            
+            # Check if auto directory exists
+            auto_found = False
+            if minieu_processed:
+                for item in os.listdir(minieu_output_dir):
+                    item_path = os.path.join(minieu_output_dir, item)
+                    if os.path.isdir(item_path):
+                        for subitem in os.listdir(item_path):
+                            subitem_path = os.path.join(item_path, subitem)
+                            if os.path.isdir(subitem_path):
+                                auto_check = os.path.join(subitem_path, "auto")
+                                if os.path.exists(auto_check):
+                                    auto_found = True
+                                    break
+            # Create PDF info
+            pdf_infos.append(PDFInfo(
+                filename=pdf_filename,
+                chunk_count=stats.get("count", 0),
+                file_size=None,  # We don't store file size in ChromaDB
+                upload_date=None  # We don't store upload date in ChromaDB
+            ))
+            
+            logger.info(f"📄 Found processed PDF: {pdf_filename}", 
+                       chunk_count=stats.get("count", 0),
+                       minieu_processed=minieu_processed,
+                       auto_found=auto_found,
+                       step="pdf_found")
         
         list_time = time.time() - start_time
         logger.info("✅ PDF list retrieval completed", 
@@ -890,34 +814,11 @@ async def query_pdf(request: QueryRequest):
         logger.info(f"📁 Found auto directory: {auto_dir}", 
                    step="auto_dir_found")
         
-        # Initialize ChromaDB client
-        chromadb_path = f"./chroma_db_{pdf_name}"
-        client = chromadb.PersistentClient(path=chromadb_path)
-        
-        # Get or create collection for markdown chunks (ChromaDB v1.0.x compatible)
-        try:
-            md_collection = client.get_or_create_collection("md_heading_chunks")
-        except Exception as e:
-            logger.warning(f"⚠️ Primary ChromaDB collection creation failed, trying v1.0.x format: {e}")
-            try:
-                # Fallback for ChromaDB v1.0.x
-                md_collection = client.get_or_create_collection(
-                    name="md_heading_chunks",
-                    metadata={"hnsw:space": "cosine"}
-                )
-            except Exception as e2:
-                logger.error(f"❌ ChromaDB collection creation failed with both methods: {e2}")
-                raise Exception(f"ChromaDB collection creation failed: {e2}")
-        
-        # Perform semantic search
+        # Perform semantic search using ChromaDB manager
         logger.info("🔍 Performing semantic search on markdown chunks...", 
                    step="semantic_search")
         
-        search_results = md_collection.query(
-            query_texts=[request.query],
-            n_results=request.max_results,
-            include=["metadatas", "documents"]
-        )
+        search_results = chromadb_manager.search(pdf_name, request.query, request.max_results)
         
         if not search_results["documents"][0]:
             logger.warning("No relevant chunks found for query", 
@@ -939,14 +840,20 @@ async def query_pdf(request: QueryRequest):
             img_paths = [img.strip() for img in meta.get("images", "").split(";") if img.strip()]
             
             for img_path in img_paths:
-                # Try to resolve image path
+                # Try to resolve image path with better logic
                 possible_paths = [
-                    img_path,
-                    os.path.join(auto_dir, "images", img_path),
-                    os.path.join(auto_dir, img_path)
+                    img_path,  # Direct path
+                    os.path.join(auto_dir, "images", img_path),  # In images subdirectory
+                    os.path.join(auto_dir, img_path),  # In auto directory
+                    os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name, "images", img_path),  # Alternative location
                 ]
                 
-                abs_img_path = next((p for p in possible_paths if os.path.exists(p)), None)
+                abs_img_path = None
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        abs_img_path = path
+                        break
+                
                 if abs_img_path:
                     try:
                         # Create URL for the image - use Minieu output directory as base
@@ -1213,11 +1120,8 @@ async def delete_pdf(pdf_filename: str):
             logger.info("Deleted Minieu output directory", path=minieu_output_dir)
         
         # Delete ChromaDB data
-        chromadb_path = f"./chroma_db_{pdf_name}"
-        if os.path.exists(chromadb_path):
-            import shutil
-            shutil.rmtree(chromadb_path)
-            logger.info("Deleted ChromaDB directory", path=chromadb_path)
+        if chromadb_manager.delete_collection(pdf_name):
+            logger.info("Deleted ChromaDB collection", pdf_name=pdf_name)
             success = True
         
         if success:

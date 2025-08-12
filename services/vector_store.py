@@ -5,12 +5,11 @@ from datetime import datetime
 import json
 import asyncio
 import os
-import structlog
 
 from config.settings import get_settings
 from services.embeddings import EmbeddingService
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Import vector store clients conditionally
 try:
@@ -743,7 +742,7 @@ class VectorStore:
             return
             
         # Try Pinecone first if configured
-        if self.settings.use_pinecone and PINECONE_AVAILABLE:
+        if self.settings.USE_PINECONE and PINECONE_AVAILABLE:
             try:
                 logger.info("🔧 Attempting to initialize Pinecone vector store")
                 self._store = PineconeVectorStore(self.embedding_service)

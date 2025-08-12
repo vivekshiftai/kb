@@ -4,11 +4,10 @@ import logging
 from typing import List
 import torch
 import asyncio
-import structlog
 
 from config.settings import get_settings
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """Service for generating text embeddings"""

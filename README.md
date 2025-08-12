@@ -10,8 +10,7 @@ A high-performance FastAPI application for PDF processing and intelligent queryi
 - **Image Handling**: Automatic image extraction and serving
 - **Rules Generation**: IoT device rules, maintenance data, and safety precautions
 - **RESTful API**: Complete FastAPI documentation and testing interface
-- **Docker Support**: Containerized deployment with Docker Compose
-- **Production Ready**: Nginx reverse proxy and SSL support
+- **Production Ready**: Comprehensive logging and error handling
 
 ## 📋 Prerequisites
 
@@ -23,16 +22,15 @@ A high-performance FastAPI application for PDF processing and intelligent queryi
 
 ## 🛠️ Quick Setup
 
-### Option 1: Automated Setup (Recommended)
+### Option 1: Simple Setup Script
 
 ```bash
 # Clone the repository
 git clone <your-repo-url>
 cd kb
 
-# Run the comprehensive setup script
-chmod +x scripts/setup.sh
-./scripts/setup.sh
+# Run the setup script
+python setup.py
 ```
 
 ### Option 2: Manual Setup
@@ -76,7 +74,7 @@ brew install \
 pip3 install "mineru[core]==2.1.0"
 
 # Install additional required dependencies
-pip3 install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3
+pip3 install huggingface_hub==0.20.3 sentence-transformers==2.2.2 chromadb==1.0.16 pdf2image==1.17.0 PyMuPDF==1.26.3 sglang==0.1.0
 ```
 
 #### 3. Set Up Python Environment
@@ -113,46 +111,15 @@ UPLOAD_DIR=./uploads
 mkdir -p uploads minieu_output chroma_db output logs
 ```
 
-## 🐳 Docker Deployment
-
-### Quick Start with Docker Compose
-
-```bash
-# Build and start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f api
-
-# Stop services
-docker-compose down
-```
-
-### Manual Docker Build
-
-```bash
-# Build the image
-docker build -t rag-pdf-api .
-
-# Run the container
-docker run -d \
-    --name rag-pdf-api \
-    -p 8000:8000 \
-    -v $(pwd)/uploads:/app/uploads \
-    -v $(pwd)/minieu_output:/app/minieu_output \
-    -e OPENAI_API_KEY=your_key_here \
-    rag-pdf-api
-```
-
 ## 🚀 Running the Application
 
 ### Development Mode
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
+# Option 1: Using the run script (recommended)
+python run.py
 
-# Run the application
+# Option 2: Using uvicorn directly
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -234,12 +201,8 @@ The application automatically calls Minieu to process PDFs. Minieu settings can 
 kb/
 ├── main.py                 # FastAPI application
 ├── requirements.txt        # Python dependencies
-├── Dockerfile             # Docker configuration
-├── docker-compose.yml     # Docker Compose setup
-├── nginx.conf             # Nginx reverse proxy
-├── install_minieu.sh      # Minieu installation script
-├── scripts/
-│   └── setup.sh          # Comprehensive setup script
+├── setup.py               # Simple setup script
+├── run.py                 # Simple run script
 ├── config/
 │   └── settings.py       # Application settings
 ├── models/
@@ -249,9 +212,13 @@ kb/
 │   ├── pdf_processor.py     # PDF processing
 │   ├── openai_client.py     # OpenAI integration
 │   └── rules_generator.py   # Rules generation
-└── utils/
-    ├── file_utils.py     # File utilities
-    └── helpers.py        # Helper functions
+├── utils/
+│   ├── file_utils.py     # File utilities
+│   └── helpers.py        # Helper functions
+├── uploads/               # Sample PDF files
+├── outputs/               # Processed outputs and images
+├── env.example            # Environment variables template
+└── README.md             # This file
 ```
 
 ## 🧪 Testing
@@ -288,14 +255,13 @@ curl http://localhost:8000/debug/images/
 
 1. **Minieu not found**
    ```bash
-   pip3 install mineru
+   pip3 install "mineru[core]==2.1.0"
    mineru --version
    ```
 
 2. **Permission denied**
    ```bash
-   chmod +x install_minieu.sh
-   chmod +x scripts/setup.sh
+   # Make sure you have write permissions to the directory
    ```
 
 3. **OpenAI API errors**
@@ -304,10 +270,8 @@ curl http://localhost:8000/debug/images/
 
 4. **ChromaDB connection issues**
    ```bash
-   # Check if ChromaDB is running
-   docker-compose ps
-   # Restart ChromaDB
-   docker-compose restart chromadb
+   # Check ChromaDB installation
+   python -c "import chromadb; print(chromadb.__version__)"
    ```
 
 ### Logs
@@ -316,31 +280,50 @@ curl http://localhost:8000/debug/images/
 # Application logs
 tail -f app.log
 
-# Docker logs
-docker-compose logs -f api
-
 # Minieu processing logs
 tail -f logs/minieu.log
 ```
 
 ## 🚀 Production Deployment
 
-### Using Docker Compose
+### Using Gunicorn
 
 ```bash
-# Production build
-docker-compose -f docker-compose.prod.yml up -d
+# Install gunicorn
+pip install gunicorn
 
-# With SSL
-docker-compose -f docker-compose.prod.yml -f docker-compose.ssl.yml up -d
+# Run with multiple workers
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-### Using Nginx
+### Using Systemd Service
 
-1. Copy `nginx.conf` to your server
-2. Configure SSL certificates
-3. Update domain names in nginx configuration
-4. Restart Nginx
+Create `/etc/systemd/system/kb-api.service`:
+
+```ini
+[Unit]
+Description=KB PDF Processing API
+After=network.target
+
+[Service]
+Type=exec
+User=your_user
+WorkingDirectory=/path/to/kb
+Environment=PATH=/path/to/kb/venv/bin
+ExecStart=/path/to/kb/venv/bin/gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl enable kb-api
+sudo systemctl start kb-api
+sudo systemctl status kb-api
+```
 
 ### Environment Variables for Production
 
@@ -375,5 +358,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Added Minieu integration for PDF processing
 - Improved image handling and serving
 - Enhanced rules generation with safety precautions
-- Added comprehensive Docker support
 - Improved error handling and logging
+- Updated to MinerU v2.1.0 with enhanced features

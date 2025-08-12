@@ -23,7 +23,7 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # Logging and utilities
-structlog==23.2.0
+# structlog==23.2.0  # Removed - using simple logging
 python-dotenv==1.0.0
 
 # File handling and utilities

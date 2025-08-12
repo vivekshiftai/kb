@@ -1,13 +1,13 @@
 import os
 import subprocess
 import asyncio
-import structlog
+import logging
 from typing import Dict, Any
 from datetime import datetime
 
 from config.settings import get_settings
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class MinieuProcessor:
     """Service to handle Minieu PDF processing"""

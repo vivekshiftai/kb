@@ -4,12 +4,12 @@ import logging
 from typing import Dict, List, Any
 import re
 from datetime import datetime
-import structlog
+import logging
 
 from config.settings import get_settings
 from utils.helpers import chunk_text_with_overlap
 
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     """Enhanced PDF processing service using Minieu output data"""
