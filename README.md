@@ -1,167 +1,169 @@
-# RAG PDF Processing API - Backend Only
+# RAG PDF Processing API with Minieu
 
-A high-performance FastAPI backend application that processes PDF documents and provides intelligent querying capabilities using Pinecone vector database and OpenAI's GPT models.
+A high-performance FastAPI application for PDF processing and intelligent querying using Minieu for document extraction and ChromaDB for vector storage.
 
 ## 🚀 Features
 
-- **Minieu-Based PDF Processing**: Process PDFs using Minieu output data (markdown + images)
-- **Vector Database Storage**: Store processed content in Pinecone with graceful fallback to ChromaDB
-- **Intelligent Querying**: Query specific PDFs using natural language with OpenAI's LLM
-- **IoT Rules Generation**: Generate IoT device rules and maintenance data from PDF content
-- **Advanced Content Processing**: Markdown-based semantic chunking with image mapping
-- **Image Extraction & Serving**: Extract and serve images from Minieu output via static URLs
-- **RESTful API**: Clean, well-documented API endpoints with OpenAPI/Swagger docs
-- **Performance Optimized**: Target response times < 1s with async processing
-- **Comprehensive Logging**: Structured JSON logging for monitoring and debugging
-- **Background Processing**: Non-blocking PDF processing with status tracking
-- **Graceful Fallback**: Automatic fallback from Pinecone to ChromaDB on connection issues
+- **PDF Processing**: Uses Minieu for advanced PDF text and image extraction
+- **Vector Storage**: ChromaDB for efficient semantic search
+- **AI-Powered Queries**: OpenAI integration for intelligent responses
+- **Image Handling**: Automatic image extraction and serving
+- **Rules Generation**: IoT device rules, maintenance data, and safety precautions
+- **RESTful API**: Complete FastAPI documentation and testing interface
+- **Docker Support**: Containerized deployment with Docker Compose
+- **Production Ready**: Nginx reverse proxy and SSL support
 
 ## 📋 Prerequisites
 
 - Python 3.8+
+- Ubuntu 22.04+ (recommended) or macOS
 - OpenAI API key
-- Pinecone API key and environment (optional - falls back to ChromaDB)
-- 4GB+ RAM recommended for PDF processing
+- 4GB+ RAM (for Minieu processing)
+- 10GB+ disk space
 
-## 🛠️ Installation
+## 🛠️ Quick Setup
 
-### 1. Clone and Setup Environment
+### Option 1: Automated Setup (Recommended)
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd kb
+
+# Run the comprehensive setup script
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+```
+
+### Option 2: Manual Setup
+
+#### 1. Install System Dependencies
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libmagic1 \
+    build-essential \
+    git \
+    curl \
+    wget
+```
+
+**macOS:**
+```bash
+brew install \
+    python3 \
+    poppler \
+    tesseract \
+    tesseract-lang \
+    libmagic \
+    git \
+    curl \
+    wget
+```
+
+#### 2. Install Minieu
+
+```bash
+pip3 install mineru
+```
+
+#### 3. Set Up Python Environment
 
 ```bash
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 
 # Install dependencies
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2. Environment Configuration
+#### 4. Configure Environment
 
-Create a `.env` file in the root directory:
+```bash
+# Copy environment template
+cp env.example .env
 
+# Edit .env file with your settings
+nano .env
+```
+
+**Required environment variables:**
 ```env
-# OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-3.5-turbo
-OPENAI_MAX_TOKENS=1500
-OPENAI_TEMPERATURE=0.7
-
-# Pinecone Configuration (Optional - falls back to ChromaDB if not available)
-PINECONE_API_KEY=your_pinecone_api_key_here
-PINECONE_ENVIRONMENT=us-east-1-aws
-PINECONE_INDEX_NAME=pdf-rag-index
-
-# ChromaDB Configuration (Fallback vector database)
-CHROMA_PERSIST_DIRECTORY=./chroma_db
-
-# File Processing
-UPLOAD_DIR=./uploads
-OUTPUT_DIR=./outputs
 MINIEU_OUTPUT_DIR=./minieu_output
-MAX_FILE_SIZE=52428800
-
-# Processing Configuration
-CHUNK_MAX_LENGTH=1000
-CHUNK_OVERLAP=200
-MAX_SEARCH_RESULTS=10
-
-# Logging
-LOG_LEVEL=INFO
+UPLOAD_DIR=./uploads
 ```
 
-### 3. Minieu Setup
-
-This system uses Minieu for PDF processing. Ensure you have:
-
-1. **Minieu installed and configured** to process PDFs
-2. **Minieu output directory** containing processed markdown and images
-3. **Directory structure**: `./minieu_output/{pdf_name}/` containing:
-   - Markdown files (`.md` or `.markdown`)
-   - Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`)
-
-### 4. Create Required Directories
+#### 5. Create Directories
 
 ```bash
-mkdir -p uploads outputs minieu_output chroma_db
+mkdir -p uploads minieu_output chroma_db output logs
 ```
 
-Or run the helper script:
+## 🐳 Docker Deployment
+
+### Quick Start with Docker Compose
+
 ```bash
-python create_dirs.py
+# Build and start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f api
+
+# Stop services
+docker-compose down
+```
+
+### Manual Docker Build
+
+```bash
+# Build the image
+docker build -t rag-pdf-api .
+
+# Run the container
+docker run -d \
+    --name rag-pdf-api \
+    -p 8000:8000 \
+    -v $(pwd)/uploads:/app/uploads \
+    -v $(pwd)/minieu_output:/app/minieu_output \
+    -e OPENAI_API_KEY=your_key_here \
+    rag-pdf-api
 ```
 
 ## 🚀 Running the Application
 
 ### Development Mode
+
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Activate virtual environment
+source venv/bin/activate
+
+# Run the application
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Production Mode
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-The API will be available at:
-- **API**: `http://localhost:8000`
-- **Interactive Docs**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
-### Testing Minieu Processing
-
-To test if your Minieu setup is working correctly:
 
 ```bash
-python test_minieu_processing.py
+# Using gunicorn
+pip install gunicorn
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-This will verify that:
-- Minieu output directory exists
-- Markdown and image files are found
-- Processing pipeline works correctly
+## 📚 API Usage
 
-## 🧪 Testing
+### 1. Upload and Process PDF
 
-### Test Logging Configuration
-```bash
-python test_logging.py
-```
-
-### Test PDF Processing Logging
-```bash
-python test_pdf_logging.py
-```
-
-### Test Rules API
-```bash
-python test_rules_api.py
-```
-
-## 📚 API Endpoints
-
-### 🏠 Root & Health
-- `GET /` - API information and available endpoints
-- `GET /health/` - Comprehensive health check
-
-### 📄 PDF Management
-- `POST /upload-pdf/` - Upload and process PDF files
-- `GET /pdfs/` - List all processed PDFs with metadata
-- `DELETE /pdfs/{filename}` - Delete PDF and all associated data
-
-### 🔍 Querying
-- `POST /query/` - Query specific PDFs with natural language
-
-### ⚙️ Rules Generation
-- `POST /rules/` - Generate IoT device rules and maintenance data from PDF content
-
-### 🖼️ Static Files
-- `GET /images/{path}` - Serve extracted PDF images
-
-## 💡 Usage Examples
-
-### Upload a PDF
 ```bash
 curl -X POST "http://localhost:8000/upload-pdf/" \
      -H "accept: application/json" \
@@ -169,364 +171,205 @@ curl -X POST "http://localhost:8000/upload-pdf/" \
      -F "file=@your_document.pdf"
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "PDF uploaded successfully. Processing started in background.",
-  "pdf_filename": "your_document.pdf",
-  "processing_status": "processing"
-}
-```
+### 2. Query PDF Content
 
-### List Processed PDFs
-```bash
-curl -X GET "http://localhost:8000/pdfs/"
-```
-
-**Response:**
-```json
-{
-  "pdfs": [
-    {
-      "filename": "manual.pdf",
-      "chunk_count": 25,
-      "file_size": 2048576,
-      "upload_date": "2024-01-15T10:30:00"
-    }
-  ],
-  "total_count": 1
-}
-```
-
-### Query a PDF
 ```bash
 curl -X POST "http://localhost:8000/query/" \
      -H "accept: application/json" \
      -H "Content-Type: application/json" \
      -d '{
-       "pdf_filename": "manual.pdf",
-       "query": "How do I install the conveyor belt?",
+       "pdf_filename": "your_document.pdf",
+       "query": "How to maintain the equipment?",
        "max_results": 5
      }'
 ```
 
-**Response:**
-```json
-{
-  "pdf_filename": "manual.pdf",
-  "query": "How do I install the conveyor belt?",
-  "answer": "To install the conveyor belt, follow these steps: 1. Remove the old belt...",
-  "results": [
-    {
-      "heading": "Installation Instructions",
-      "text": "Step-by-step installation guide...",
-      "score": 0.95,
-      "page_number": 1,
-      "images": [
-        {
-          "filename": "installation_diagram.png",
-          "url": "/images/manual/page_1_img_1.png",
-          "page_number": 1
-        }
-      ]
-    }
-  ],
-  "total_matches": 3,
-  "processing_time": 0.85
-}
-```
+### 3. Generate Rules
 
-### Generate IoT Rules and Maintenance Data
-
-**Option 1: Using an already uploaded PDF**
 ```bash
 curl -X POST "http://localhost:8000/rules/" \
      -H "accept: application/json" \
      -H "Content-Type: multipart/form-data" \
-     -F "pdf_filename=equipment_manual.pdf" \
-     -F "chunk_size=10" \
-     -F "rule_types=monitoring" \
-     -F "rule_types=maintenance" \
-     -F "rule_types=alert"
+     -F "file=@your_document.pdf" \
+     -F "chunk_size=30" \
+     -F "rule_types=monitoring,maintenance,alert"
 ```
 
-**Option 2: Direct PDF upload for rules generation**
-```bash
-curl -X POST "http://localhost:8000/rules/" \
-     -H "accept: application/json" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@equipment_manual.pdf" \
-     -F "chunk_size=10" \
-     -F "rule_types=monitoring" \
-     -F "rule_types=maintenance" \
-     -F "rule_types=alert"
-```
-
-**Response:**
-```json
-{
-  "pdf_filename": "equipment_manual.pdf",
-  "total_pages": 45,
-  "processed_chunks": 5,
-  "iot_rules": [
-    {
-      "device_name": "Temperature Sensor T1",
-      "rule_type": "monitoring",
-      "condition": "Temperature exceeds 85°C",
-      "action": "Send alert to maintenance team",
-      "priority": "high",
-      "frequency": "hourly",
-      "description": "Monitor equipment temperature to prevent overheating"
-    },
-    {
-      "device_name": "Conveyor Belt Motor",
-      "rule_type": "maintenance",
-      "condition": "Operating hours reach 1000",
-      "action": "Schedule preventive maintenance",
-      "priority": "medium",
-      "frequency": "weekly",
-      "description": "Regular maintenance schedule for motor components"
-    }
-  ],
-  "maintenance_data": [
-    {
-      "component_name": "Filter Assembly",
-      "maintenance_type": "preventive",
-      "frequency": "Every 3 months",
-      "last_maintenance": "2024-01-15",
-      "next_maintenance": "2024-04-15",
-      "description": "Replace air filters to maintain optimal performance"
-    }
-  ],
-  "processing_time": 15.67,
-  "summary": "Generated 8 IoT monitoring rules and 5 maintenance schedules from 45-page equipment manual."
-}
-```
-
-## 🏗️ Architecture
-
-### Core Components
-
-- **FastAPI Application** (`main.py`): Main API server with all endpoints
-- **PDF Processor** (`services/pdf_processor.py`): Extracts text, images, and metadata with ToC-based chunking
-- **Vector Store** (`services/vector_store.py`): Manages Pinecone operations with ChromaDB fallback
-- **Rules Generator** (`services/rules_generator.py`): Generates IoT rules and maintenance data
-- **Embedding Service** (`services/embeddings.py`): Generates text embeddings
-- **OpenAI Client** (`services/openai_client.py`): Handles LLM interactions
-
-### Data Flow
-
-1. **PDF Upload** → File validation → Background processing
-2. **Processing** → Text extraction → Chunking → Embedding generation → Pinecone storage
-3. **Querying** → Query embedding → Similarity search → Context retrieval → LLM response
-
-### Vector Database Design
-
-- **Primary**: Pinecone Index with PDF-specific namespaces
-- **Fallback**: ChromaDB with separate collections for text and images
-- **Namespace Format**: `pdf_{filename_without_extension}`
-- **Metadata**: Includes heading, text, images, page numbers, chunk indices, tables count
-- **Text Embeddings**: 384-dimensional vectors from sentence-transformers
-- **Image Embeddings**: CLIP embeddings for visual content (ChromaDB only)
-- **Chunking Strategy**: ToC-based semantic chunking for better context preservation
-
-## 🧪 Testing
+### 4. List Processed PDFs
 
 ```bash
-# Install test dependencies (already in requirements.txt)
-pip install pytest pytest-asyncio httpx
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=. --cov-report=html
-
-# Run specific test file
-pytest tests/test_main.py -v
-
-# Test API endpoints using curl or Postman
-curl -X GET "http://localhost:8000/health/"
-
-# Test PDF upload
-curl -X POST "http://localhost:8000/upload-pdf/" \
-     -H "accept: application/json" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@your_document.pdf"
-
-# Test querying
-curl -X POST "http://localhost:8000/query/" \
-     -H "accept: application/json" \
-     -H "Content-Type: application/json" \
-     -d '{"pdf_filename": "your_document.pdf", "query": "What is the maintenance schedule?"}'
-
-# Test rules generation
-curl -X POST "http://localhost:8000/rules/" \
-     -H "accept: application/json" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@your_document.pdf"
+curl -X GET "http://localhost:8000/pdfs/" \
+     -H "accept: application/json"
 ```
 
-## 📊 Performance Features
+## 🔧 Configuration
 
-- **Async Processing**: Background PDF processing for non-blocking uploads
-- **Advanced Chunking**: ToC-based semantic chunking for better context preservation
-- **Dual Vector Storage**: Pinecone with ChromaDB fallback for reliability
-- **Separate Collections**: Text and image embeddings stored separately in ChromaDB
-- **Batch Operations**: Batch vector upserts to vector databases
-- **Response Optimization**: Target < 1s query response times
-- **Memory Management**: Efficient handling of large PDFs
-- **Image Processing**: CLIP embeddings for visual content analysis
-
-## 🔧 Configuration Options
-
-Key environment variables:
+### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | Required |
-| `PINECONE_API_KEY` | Pinecone API key | Optional (falls back to ChromaDB) |
-| `PINECONE_ENVIRONMENT` | Pinecone environment | `us-east-1-aws` |
-| `CHROMA_PERSIST_DIRECTORY` | ChromaDB storage directory | `./chroma_db` |
-| `CHUNK_MAX_LENGTH` | Maximum chunk size | `1000` |
-| `CHUNK_OVERLAP` | Overlap between chunks | `200` |
-| `MAX_FILE_SIZE` | Maximum PDF file size | `50MB` |
+| `OPENAI_API_KEY` | OpenAI API key (required) | - |
+| `MINIEU_OUTPUT_DIR` | Minieu output directory | `./minieu_output` |
+| `UPLOAD_DIR` | PDF upload directory | `./uploads` |
+| `MAX_FILE_SIZE` | Maximum file size (bytes) | `52428800` (50MB) |
 | `LOG_LEVEL` | Logging level | `INFO` |
+| `CHUNK_MAX_LENGTH` | Maximum chunk length | `1000` |
+| `MAX_SEARCH_RESULTS` | Maximum search results | `10` |
 
-## 📝 Logging
+### Minieu Configuration
 
-The application uses structured JSON logging with:
-- Request/response tracking
-- Processing pipeline monitoring
-- Error tracking with context
-- Performance metrics
+The application automatically calls Minieu to process PDFs. Minieu settings can be configured in the `MinieuProcessor` class:
 
-Log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`
+- **Timeout**: 300 seconds (5 minutes)
+- **Retries**: 3 attempts
+- **Output Format**: Markdown + images
 
-## 🔒 Security Features
+## 📁 Project Structure
 
-- **File Validation**: Strict PDF file validation
-- **Size Limits**: Configurable file size limits
-- **Input Sanitization**: Clean filenames and text inputs
-- **CORS Configuration**: Configurable CORS settings
-- **Error Handling**: Secure error messages without sensitive data
-
-## 🤖 Rules Generation Features
-
-The application includes advanced IoT rules generation capabilities:
-
-### **IoT Device Rules**
-- **Monitoring Rules**: Device state monitoring and threshold detection
-- **Maintenance Rules**: Preventive and predictive maintenance schedules
-- **Alert Rules**: Condition-based alerting and notifications
-- **Control Rules**: Automated device control and response actions
-
-### **Maintenance Data Extraction**
-- **Component Information**: Device and component identification
-- **Maintenance Schedules**: Frequency and timing requirements
-- **Service History**: Last and next maintenance dates
-- **Procedures**: Detailed maintenance procedures and requirements
-
-### **Processing Capabilities**
-- **Chunk-based Processing**: Processes PDFs in configurable page chunks (default: 10 pages)
-- **Dual Input Methods**: Direct file upload or use existing uploaded PDFs
-- **Intelligent Deduplication**: Removes duplicate rules and maintenance entries
-- **Comprehensive Summaries**: Provides overview of generated content
-- **Multiple Rule Types**: Configurable rule type generation
-
-## 🚀 Deployment
-
-### Docker Deployment
-```dockerfile
-FROM python:3.9-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+kb/
+├── main.py                 # FastAPI application
+├── requirements.txt        # Python dependencies
+├── Dockerfile             # Docker configuration
+├── docker-compose.yml     # Docker Compose setup
+├── nginx.conf             # Nginx reverse proxy
+├── install_minieu.sh      # Minieu installation script
+├── scripts/
+│   └── setup.sh          # Comprehensive setup script
+├── config/
+│   └── settings.py       # Application settings
+├── models/
+│   └── schemas.py        # Pydantic models
+├── services/
+│   ├── minieu_processor.py  # Minieu integration
+│   ├── pdf_processor.py     # PDF processing
+│   ├── openai_client.py     # OpenAI integration
+│   └── rules_generator.py   # Rules generation
+└── utils/
+    ├── file_utils.py     # File utilities
+    └── helpers.py        # Helper functions
 ```
 
+## 🧪 Testing
+
+### Health Check
+
+```bash
+curl http://localhost:8000/health/
+```
+
+### Debug Endpoints
+
+```bash
+# Check Minieu status
+curl http://localhost:8000/debug/minieu-status/
+
+# Test Minieu processing
+curl -X POST "http://localhost:8000/debug/process-with-minieu/" \
+     -H "Content-Type: application/json" \
+     -d '{"pdf_filename": "test.pdf"}'
+
+# Check images
+curl http://localhost:8000/debug/images/
+```
+
+### API Documentation
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+1. **Minieu not found**
+   ```bash
+   pip3 install mineru
+   mineru --version
+   ```
+
+2. **Permission denied**
+   ```bash
+   chmod +x install_minieu.sh
+   chmod +x scripts/setup.sh
+   ```
+
+3. **OpenAI API errors**
+   - Check your API key in `.env`
+   - Verify API key has sufficient credits
+
+4. **ChromaDB connection issues**
+   ```bash
+   # Check if ChromaDB is running
+   docker-compose ps
+   # Restart ChromaDB
+   docker-compose restart chromadb
+   ```
+
+### Logs
+
+```bash
+# Application logs
+tail -f app.log
+
+# Docker logs
+docker-compose logs -f api
+
+# Minieu processing logs
+tail -f logs/minieu.log
+```
+
+## 🚀 Production Deployment
+
+### Using Docker Compose
+
+```bash
+# Production build
+docker-compose -f docker-compose.prod.yml up -d
+
+# With SSL
+docker-compose -f docker-compose.prod.yml -f docker-compose.ssl.yml up -d
+```
+
+### Using Nginx
+
+1. Copy `nginx.conf` to your server
+2. Configure SSL certificates
+3. Update domain names in nginx configuration
+4. Restart Nginx
+
 ### Environment Variables for Production
+
 ```env
+DEBUG=false
 LOG_LEVEL=WARNING
-MAX_CONCURRENT_PROCESSING=2
-CLEANUP_INTERVAL_DAYS=30
+OPENAI_API_KEY=your_production_key
+SECRET_KEY=your_secure_secret_key
 ```
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch
 3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass (`pytest`)
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
+4. Add tests
+5. Submit a pull request
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🆘 Troubleshooting
+## 🆘 Support
 
-### Common Issues
+- **Issues**: Create an issue on GitHub
+- **Documentation**: Check the `/docs` endpoint
+- **Debug**: Use the debug endpoints for troubleshooting
 
-1. **Pinecone Connection Errors**
-   - Verify API key and environment settings
-   - Check network connectivity
-   - Ensure index exists or can be created
-   - Application will automatically fall back to ChromaDB
+## 🔄 Changelog
 
-2. **PDF Processing Failures**
-   - Check PDF file integrity
-   - Verify file size limits
-   - Ensure sufficient disk space
-   - Check for image extraction errors (CMYK color space issues)
-
-3. **OpenAI API Errors**
-   - Verify API key validity
-   - Check rate limits and quotas
-   - Monitor token usage
-
-4. **Rules Generation Issues**
-   - Ensure PDF contains relevant technical content
-   - Check OpenAI API quota for large documents
-   - Verify chunk size settings for optimal processing
-
-### Debug Mode
-```bash
-LOG_LEVEL=DEBUG uvicorn main:app --reload
-```
-
-### PDF Processing Errors
-
-If you're experiencing errors when adding PDFs:
-
-1. **Check the application logs:**
-   ```bash
-   tail -f app.log
-   ```
-
-2. **Verify directory structure:**
-   ```bash
-   ls -la uploads/ outputs/ chroma_db/
-   ```
-
-3. **Common PDF processing issues:**
-   - **Missing directories**: Ensure `uploads/`, `outputs/`, and `chroma_db/` directories exist
-   - **Import errors**: Check if all dependencies are installed with `pip install -r requirements.txt`
-   - **Vector store issues**: Verify ChromaDB/Pinecone configuration in `.env`
-   - **Logging errors**: Ensure structlog is properly configured
-
-4. **If errors persist:**
-   - Check the `app.log` file for detailed error messages
-   - Verify your `.env` file configuration
-   - Ensure sufficient disk space for uploads and vector storage
-
-For additional support, please check the logs and API documentation at `/docs`.
+### v2.0.0
+- Added Minieu integration for PDF processing
+- Improved image handling and serving
+- Enhanced rules generation with safety precautions
+- Added comprehensive Docker support
+- Improved error handling and logging

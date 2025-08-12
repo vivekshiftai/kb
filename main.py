@@ -23,6 +23,7 @@ from models.schemas import (
 from services.pdf_processor import PDFProcessor
 from services.openai_client import OpenAIClient
 from services.rules_generator import RulesGenerator
+from services.minieu_processor import MinieuProcessor
 from config.settings import get_settings
 from utils.file_utils import ensure_directories, get_file_hash
 from utils.helpers import validate_pdf_file, clean_filename, format_file_size
@@ -109,6 +110,7 @@ settings = get_settings()
 pdf_processor = PDFProcessor()
 openai_client = OpenAIClient()
 rules_generator = RulesGenerator()
+minieu_processor = MinieuProcessor()
 
 # Ensure required directories exist
 ensure_directories()
@@ -154,6 +156,13 @@ async def startup_event():
         except Exception as e:
             logger.warning("⚠️ ChromaDB health check failed", error=str(e))
         
+        logger.info("🔧 Checking Minieu availability...")
+        minieu_available = minieu_processor.check_minieu_availability()
+        if not minieu_available:
+            logger.warning("⚠️ Minieu is not available. PDF processing will fail.")
+        else:
+            logger.info("✅ Minieu is available")
+        
         logger.info("🎉 Application started successfully", 
                    version="2.0.0",
                    upload_dir=settings.UPLOAD_DIR,
@@ -189,7 +198,13 @@ async def root():
             "rules": "/rules/",
             "delete": "/pdfs/{filename}",
             "docs": "/docs",
-            "images": "/images/"
+            "images": "/images/",
+            "debug": {
+                "minieu_status": "/debug/minieu-status/",
+                "process_minieu": "/debug/process-with-minieu/",
+                "query_test": "/debug/query-test/",
+                "images": "/debug/images/"
+            }
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -236,6 +251,7 @@ async def debug_minieu_status():
         status = {
             "minieu_output_dir": minieu_dir,
             "exists": os.path.exists(minieu_dir),
+            "minieu_available": minieu_processor.check_minieu_availability(),
             "pdfs_processed": []
         }
         
@@ -292,6 +308,43 @@ async def debug_minieu_status():
         logger.error(f"Error checking Minieu status: {e}")
         return {"error": str(e)}
 
+@app.post("/debug/process-with-minieu/", tags=["Debug"])
+async def debug_process_with_minieu(pdf_filename: str):
+    """Debug endpoint to manually trigger Minieu processing for a PDF"""
+    try:
+        logger.info(f"🔧 Manual Minieu processing requested for: {pdf_filename}")
+        
+        # Check if PDF exists
+        pdf_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+        if not os.path.exists(pdf_path):
+            raise HTTPException(
+                status_code=404, 
+                detail=f"PDF '{pdf_filename}' not found in uploads directory"
+            )
+        
+        # Check if Minieu is available
+        if not minieu_processor.check_minieu_availability():
+            raise HTTPException(
+                status_code=503,
+                detail="Minieu is not available. Please install Minieu first."
+            )
+        
+        # Process with Minieu
+        result = await minieu_processor.process_pdf_with_minieu(pdf_path, pdf_filename)
+        
+        return {
+            "success": True,
+            "message": "Minieu processing completed",
+            "pdf_filename": pdf_filename,
+            "result": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in manual Minieu processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/debug/query-test/", tags=["Debug"])
 async def debug_query_test():
     """Debug endpoint to test query functionality with a simple search"""
@@ -324,7 +377,13 @@ async def debug_query_test():
             return {"error": f"ChromaDB not found for {test_pdf}"}
         
         client = chromadb.PersistentClient(path=chromadb_path)
-        md_collection = client.get_collection("md_heading_chunks")
+        try:
+            md_collection = client.get_collection("md_heading_chunks")
+        except Exception as e:
+            # Fallback for ChromaDB v1.0.x
+            md_collection = client.get_collection(
+                name="md_heading_chunks"
+            )
         
         # Perform a simple search
         search_results = md_collection.query(
@@ -385,6 +444,9 @@ async def health_check():
             logger.warning("ChromaDB health check failed", error=str(e))
             chromadb_status = False
         
+        # Check Minieu availability
+        minieu_status = minieu_processor.check_minieu_availability()
+        
         health_time = time.time() - start_time
         
         overall_status = "healthy" if all([
@@ -392,7 +454,8 @@ async def health_check():
             upload_dir_exists, 
             output_dir_exists,
             minieu_output_dir_exists,
-            chromadb_status
+            chromadb_status,
+            minieu_status
         ]) else "degraded"
         
         logger.info("Health check completed", 
@@ -577,8 +640,19 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                    file_hash=file_hash[:8] + "...")
         processing_start = time.time()
         
-        # Step 1: Process PDF using Minieu output data
-        logger.info("📄 Step 1: Processing PDF using Minieu output data", 
+        # Step 1: Process PDF with Minieu
+        logger.info("🤖 Step 1: Processing PDF with Minieu", 
+                   filename=filename,
+                   step="minieu_processing")
+        minieu_result = await minieu_processor.process_pdf_with_minieu(file_path, filename)
+        
+        logger.info("✅ Minieu processing completed", 
+                   filename=filename,
+                   minieu_time=minieu_result.get("processing_time", 0),
+                   step="minieu_complete")
+        
+        # Step 2: Process PDF using Minieu output data
+        logger.info("📄 Step 2: Processing PDF using Minieu output data", 
                    filename=filename,
                    step="content_extraction")
         processing_result = await pdf_processor.process_pdf(file_path, filename)
@@ -600,8 +674,15 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
         chromadb_path = f"./chroma_db_{pdf_name}"
         client = chromadb.PersistentClient(path=chromadb_path)
         
-        # Get or create collection for markdown chunks
-        md_collection = client.get_or_create_collection("md_heading_chunks")
+        # Get or create collection for markdown chunks (ChromaDB v1.0.x compatible)
+        try:
+            md_collection = client.get_or_create_collection("md_heading_chunks")
+        except Exception as e:
+            # Fallback for ChromaDB v1.0.x
+            md_collection = client.get_or_create_collection(
+                name="md_heading_chunks",
+                metadata={"hnsw:space": "cosine"}
+            )
         
         # Store chunks in ChromaDB
         from sentence_transformers import SentenceTransformer
@@ -801,8 +882,15 @@ async def query_pdf(request: QueryRequest):
         chromadb_path = f"./chroma_db_{pdf_name}"
         client = chromadb.PersistentClient(path=chromadb_path)
         
-        # Get or create collection for markdown chunks
-        md_collection = client.get_or_create_collection("md_heading_chunks")
+        # Get or create collection for markdown chunks (ChromaDB v1.0.x compatible)
+        try:
+            md_collection = client.get_or_create_collection("md_heading_chunks")
+        except Exception as e:
+            # Fallback for ChromaDB v1.0.x
+            md_collection = client.get_or_create_collection(
+                name="md_heading_chunks",
+                metadata={"hnsw:space": "cosine"}
+            )
         
         # Perform semantic search
         logger.info("🔍 Performing semantic search on markdown chunks...", 
