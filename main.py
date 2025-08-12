@@ -74,7 +74,7 @@ ensure_directories()
 # Mount static files for serving extracted images from Minieu output
 images_dir = settings.MINIEU_OUTPUT_DIR
 os.makedirs(images_dir, exist_ok=True)
-logger.info(f"Mounting Minieu output directory for images", images_dir=images_dir, exists=os.path.exists(images_dir))
+logger.info(f"Mounting Minieu output directory for images: {images_dir} (exists: {os.path.exists(images_dir)})")
 
 # Check if Minieu output directory has any image files
 if os.path.exists(images_dir):
@@ -110,7 +110,7 @@ async def startup_event():
             test_client.heartbeat()
             logger.info("✅ ChromaDB is available")
         except Exception as e:
-            logger.warning("⚠️ ChromaDB health check failed", error=str(e))
+            logger.warning(f"⚠️ ChromaDB health check failed: {str(e)}")
         
         logger.info("🔧 Checking Minieu availability...")
         minieu_available = minieu_processor.check_minieu_availability()
@@ -119,13 +119,9 @@ async def startup_event():
         else:
             logger.info("✅ Minieu is available")
         
-        logger.info("🎉 Application started successfully", 
-                   version="2.0.0",
-                   upload_dir=settings.UPLOAD_DIR,
-                   output_dir=settings.OUTPUT_DIR,
-                   minieu_output_dir=settings.MINIEU_OUTPUT_DIR)
+        logger.info(f"🎉 Application started successfully - Version: 2.0.0, Upload: {settings.UPLOAD_DIR}, Output: {settings.OUTPUT_DIR}, Minieu: {settings.MINIEU_OUTPUT_DIR}")
     except Exception as e:
-        logger.error("❌ Failed to start application", error=str(e))
+        logger.error(f"❌ Failed to start application: {str(e)}")
         raise
 
 
@@ -135,7 +131,7 @@ async def shutdown_event():
     try:
         logger.info("Application shutdown completed")
     except Exception as e:
-        logger.error("Error during shutdown", error=str(e))
+        logger.error(f"Error during shutdown: {str(e)}")
 
 
 @app.get("/", tags=["Root"])
@@ -195,7 +191,7 @@ async def debug_images():
             "images": images_list[:10]  # Return first 10 images
         }
     except Exception as e:
-        logger.error("Error in debug images endpoint", error=str(e))
+        logger.error(f"Error in debug images endpoint: {str(e)}")
         return {"error": str(e)}
 
 
@@ -376,7 +372,7 @@ async def debug_query_test():
         }
         
     except Exception as e:
-        logger.error("Error in debug query test", error=str(e))
+        logger.error(f"Error in debug query test: {str(e)}")
         return {"error": str(e)}
 
 
@@ -403,7 +399,7 @@ async def health_check():
             test_client.heartbeat()
             chromadb_status = True
         except Exception as e:
-            logger.warning("ChromaDB health check failed", error=str(e))
+            logger.warning(f"ChromaDB health check failed: {str(e)}")
             chromadb_status = False
         
         # Check Minieu availability and version
@@ -434,7 +430,7 @@ async def health_check():
         )
         
     except Exception as e:
-        logger.error("Health check failed", error=str(e))
+        logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=503, detail="Service unavailable")
 
 
@@ -451,12 +447,12 @@ async def upload_pdf(
     start_time = time.time()
     
     try:
-        logger.info("📤 Starting PDF upload process", filename=file.filename)
+        logger.info(f"📤 Starting PDF upload process for file: {file.filename}")
         
         # Validate file type
         logger.info("🔍 Validating file type...")
         if not file.filename or not file.filename.lower().endswith('.pdf'):
-            logger.warning("❌ Invalid file type uploaded", filename=file.filename)
+            logger.warning(f"❌ Invalid file type uploaded: {file.filename}")
             raise HTTPException(
                 status_code=400, 
                 detail="Only PDF files are allowed. Please upload a .pdf file."
@@ -467,9 +463,9 @@ async def upload_pdf(
         logger.info("🔍 Cleaning filename...")
         clean_name = clean_filename(file.filename)
         if not clean_name:
-            logger.warning("❌ Invalid filename", original_name=file.filename)
+            logger.warning(f"❌ Invalid filename: {file.filename}")
             raise HTTPException(status_code=400, detail="Invalid filename")
-        logger.info("✅ Filename cleaned", original_name=file.filename, clean_name=clean_name)
+        logger.info(f"✅ Filename cleaned: {file.filename} -> {clean_name}")
         
         # Read and validate file size
         logger.info("📏 Reading file content...")
@@ -492,13 +488,13 @@ async def upload_pdf(
         file_path = os.path.join(settings.UPLOAD_DIR, clean_name)
         with open(file_path, "wb") as buffer:
             buffer.write(file_content)
-        logger.info("✅ File saved successfully", path=file_path)
+        logger.info(f"✅ File saved successfully: {file_path}")
         
         # Validate PDF structure
         logger.info("🔍 Validating PDF structure...")
         validation = validate_pdf_file(file_path)
         if not validation["valid"]:
-            logger.error("❌ PDF validation failed", error=validation['error'])
+            logger.error(f"❌ PDF validation failed: {validation['error']}")
             os.remove(file_path)
             raise HTTPException(
                 status_code=400, 
