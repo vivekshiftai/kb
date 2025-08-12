@@ -18,9 +18,7 @@ class MinieuProcessor:
     async def process_pdf_with_minieu(self, pdf_path: str, filename: str) -> Dict[str, Any]:
         """Process PDF using Minieu and wait for completion"""
         try:
-            logger.info(f"🤖 Starting Minieu processing for {filename}", 
-                       pdf_path=pdf_path,
-                       step="minieu_start")
+            logger.info(f"🤖 Starting Minieu processing for {filename} - Path: {pdf_path}, Step: minieu_start")
             
             processing_start = datetime.now()
             
@@ -30,9 +28,7 @@ class MinieuProcessor:
             # Check if Minieu output already exists
             minieu_output_dir = os.path.join(self.settings.MINIEU_OUTPUT_DIR, pdf_name)
             if os.path.exists(minieu_output_dir):
-                logger.info(f"✅ Minieu output already exists for {filename}", 
-                           minieu_dir=minieu_output_dir,
-                           step="minieu_already_processed")
+                logger.info(f"✅ Minieu output already exists for {filename} - Dir: {minieu_output_dir}, Step: minieu_already_processed")
                 return {
                     "success": True,
                     "message": "Minieu output already exists",
@@ -44,8 +40,7 @@ class MinieuProcessor:
             os.makedirs(self.settings.MINIEU_OUTPUT_DIR, exist_ok=True)
             
             # Call Minieu to process the PDF
-            logger.info(f"🚀 Calling Minieu to process {filename}...", 
-                       step="minieu_call")
+            logger.info(f"🚀 Calling Minieu to process {filename}... - Step: minieu_call")
             
             # MinerU v2.1.0 command: mineru process -p <pdf_path> --output <output_dir>
             # The new version requires -p/--path option
@@ -75,10 +70,7 @@ class MinieuProcessor:
                 stdout, stderr = await process.communicate()
                 
                 if process.returncode != 0:
-                    logger.warning(f"⚠️ Primary MinerU command failed, trying fallback for {filename}", 
-                               returncode=process.returncode,
-                               stderr=stderr.decode() if stderr else "No error output",
-                               step="minieu_fallback")
+                    logger.warning(f"⚠️ Primary MinerU command failed, trying fallback for {filename} - Return code: {process.returncode}, Error: {stderr.decode() if stderr else 'No error output'}, Step: minieu_fallback")
                     
                     # Try fallback command for v2.1.0
                     process = await asyncio.create_subprocess_exec(
@@ -90,21 +82,16 @@ class MinieuProcessor:
                     stdout, stderr = await process.communicate()
                     
                     if process.returncode != 0:
-                        logger.error(f"❌ MinerU processing failed for {filename}", 
-                                   returncode=process.returncode,
-                                   stderr=stderr.decode() if stderr else "No error output",
-                                   step="minieu_failed")
+                        logger.error(f"❌ MinerU processing failed for {filename} - Return code: {process.returncode}, Error: {stderr.decode() if stderr else 'No error output'}, Step: minieu_failed")
                         raise Exception(f"MinerU processing failed: {stderr.decode() if stderr else 'Unknown error'}")
                 else:
                     logger.info(f"✅ Primary MinerU command succeeded for {filename}")
                     
             except Exception as e:
-                logger.error(f"❌ Error running MinerU process for {filename}", error=str(e))
+                logger.error(f"❌ Error running MinerU process for {filename}: {str(e)}")
                 raise
             
-            logger.info(f"✅ Minieu processing completed for {filename}", 
-                       stdout=stdout.decode() if stdout else "No output",
-                       step="minieu_completed")
+            logger.info(f"✅ Minieu processing completed for {filename} - Output: {stdout.decode() if stdout else 'No output'}, Step: minieu_completed")
             
             # Wait a bit for files to be written
             await asyncio.sleep(2)
@@ -122,11 +109,7 @@ class MinieuProcessor:
             
             processing_time = (datetime.now() - processing_start).total_seconds()
             
-            logger.info(f"🎉 Minieu processing successful for {filename}", 
-                       output_dir=minieu_output_dir,
-                       auto_dir=auto_dir,
-                       processing_time=f"{processing_time:.2f}s",
-                       step="minieu_success")
+            logger.info(f"🎉 Minieu processing successful for {filename} - Output: {minieu_output_dir}, Auto: {auto_dir}, Time: {processing_time:.2f}s, Step: minieu_success")
             
             return {
                 "success": True,
@@ -137,9 +120,7 @@ class MinieuProcessor:
             }
             
         except Exception as e:
-            logger.error(f"❌ Error in Minieu processing for {filename}", 
-                        error=str(e),
-                        step="minieu_error")
+            logger.error(f"❌ Error in Minieu processing for {filename} - Error: {str(e)}, Step: minieu_error")
             raise
     
     def _find_auto_directory(self, minieu_output_dir: str) -> str:

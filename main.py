@@ -505,7 +505,7 @@ async def upload_pdf(
         # Generate file hash for deduplication
         logger.info("🔐 Generating file hash...")
         file_hash = get_file_hash(file_path)
-        logger.info("✅ File hash generated", hash=file_hash[:8] + "...")
+        logger.info(f"✅ File hash generated: {file_hash[:8]}...")
         
         # Check if PDF already processed in Minieu output and ChromaDB
         logger.info("🔍 Checking if PDF already processed...")
@@ -533,12 +533,12 @@ async def upload_pdf(
             
             if auto_dir:
                 minieu_processed = True
-                logger.info("✅ PDF already processed in Minieu output", filename=clean_name)
+                logger.info(f"✅ PDF already processed in Minieu output: {clean_name}")
         
         # Check ChromaDB
         chromadb_processed = chromadb_manager.collection_exists(pdf_name)
         if chromadb_processed:
-            logger.info("✅ PDF already processed in ChromaDB", filename=clean_name)
+            logger.info(f"✅ PDF already processed in ChromaDB: {clean_name}")
         
         # If both Minieu and ChromaDB are processed, return success
         if minieu_processed and chromadb_processed:
@@ -563,10 +563,7 @@ async def upload_pdf(
             processing_result = await process_pdf_background(file_path, clean_name, file_hash)
             
             upload_time = time.time() - start_time
-            logger.info("🎉 PDF upload and processing completed successfully", 
-                       filename=clean_name,
-                       file_size=format_file_size(file_size),
-                       upload_time=f"{upload_time:.2f}s")
+            logger.info(f"🎉 PDF upload and processing completed successfully - File: {clean_name}, Size: {format_file_size(file_size)}, Time: {upload_time:.2f}s")
             
             return UploadResponse(
                 success=True,
@@ -575,9 +572,7 @@ async def upload_pdf(
                 processing_status="completed"
             )
         except Exception as processing_error:
-            logger.error("❌ Error processing PDF", 
-                        filename=clean_name,
-                        error=str(processing_error))
+            logger.error(f"❌ Error processing PDF - File: {clean_name}, Error: {str(processing_error)}")
             
             # Clean up the uploaded file if processing failed
             try:
@@ -598,9 +593,7 @@ async def upload_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("❌ Error uploading PDF", 
-                    filename=getattr(file, 'filename', 'unknown'),
-                    error=str(e))
+        logger.error(f"❌ Error uploading PDF - File: {getattr(file, 'filename', 'unknown')}, Error: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to process PDF upload: {str(e)}"
@@ -695,10 +688,10 @@ async def list_pdfs():
     """
     try:
         start_time = time.time()
-        logger.info("📋 Starting PDF list retrieval", step="list_start")
+        logger.info("📋 Starting PDF list retrieval - Step: list_start")
         
         # Get processed PDFs from ChromaDB collections
-        logger.info("🔍 Scanning ChromaDB collections for processed PDFs", step="chromadb_scan")
+        logger.info("🔍 Scanning ChromaDB collections for processed PDFs - Step: chromadb_scan")
         pdf_infos = []
         
         # Get all PDF collections from ChromaDB
@@ -737,17 +730,10 @@ async def list_pdfs():
                 upload_date=None  # We don't store upload date in ChromaDB
             ))
             
-            logger.info(f"📄 Found processed PDF: {pdf_filename}", 
-                       chunk_count=stats.get("count", 0),
-                       minieu_processed=minieu_processed,
-                       auto_found=auto_found,
-                       step="pdf_found")
+            logger.info(f"📄 Found processed PDF: {pdf_filename} - Chunks: {stats.get('count', 0)}, Minieu: {minieu_processed}, Auto: {auto_found}, Step: pdf_found")
         
         list_time = time.time() - start_time
-        logger.info("✅ PDF list retrieval completed", 
-                   count=len(pdf_infos),
-                   processing_time=list_time,
-                   step="list_complete")
+        logger.info(f"✅ PDF list retrieval completed - Count: {len(pdf_infos)}, Time: {list_time:.2f}s, Step: list_complete")
         
         return PDFListResponse(
             pdfs=pdf_infos,
@@ -755,9 +741,7 @@ async def list_pdfs():
         )
         
     except Exception as e:
-        logger.error("❌ Error listing PDFs", 
-                    error=str(e),
-                    step="list_error")
+        logger.error(f"❌ Error listing PDFs - Error: {str(e)}, Step: list_error")
         raise HTTPException(
             status_code=500, 
             detail="Failed to retrieve PDF list"
@@ -770,10 +754,7 @@ async def query_pdf(request: QueryRequest):
     try:
         query_start = time.time()
         
-        logger.info(f"🔍 Starting query for PDF: {request.pdf_filename}", 
-                   query=request.query,
-                   max_results=request.max_results,
-                   step="query_start")
+        logger.info(f"🔍 Starting query for PDF: {request.pdf_filename} - Query: {request.query}, Max Results: {request.max_results}, Step: query_start")
         
         # Validate PDF exists in Minieu output
         pdf_name = os.path.splitext(request.pdf_filename)[0]
@@ -807,18 +788,15 @@ async def query_pdf(request: QueryRequest):
                 detail=f"No 'auto' directory found for PDF '{request.pdf_filename}'"
             )
         
-        logger.info(f"📁 Found auto directory: {auto_dir}", 
-                   step="auto_dir_found")
+        logger.info(f"📁 Found auto directory: {auto_dir} - Step: auto_dir_found")
         
         # Perform semantic search using ChromaDB manager
-        logger.info("🔍 Performing semantic search on markdown chunks...", 
-                   step="semantic_search")
+        logger.info("🔍 Performing semantic search on markdown chunks... - Step: semantic_search")
         
         search_results = chromadb_manager.search(pdf_name, request.query, request.max_results)
         
         if not search_results["documents"][0]:
-            logger.warning("No relevant chunks found for query", 
-                          query=request.query)
+            logger.warning(f"No relevant chunks found for query: {request.query}")
             return QueryResponse(
                 pdf_filename=request.pdf_filename,
                 query=request.query,
@@ -1003,7 +981,7 @@ async def generate_rules(
             # Validate file
             logger.info("🔍 Validating uploaded file...")
             if not validate_pdf_file(file):
-                logger.error("❌ Invalid PDF file uploaded", filename=file.filename)
+                logger.error(f"❌ Invalid PDF file uploaded: {file.filename}")
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid PDF file. Please upload a valid PDF."
@@ -1017,7 +995,7 @@ async def generate_rules(
             
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            logger.info("✅ Temporary file saved", path=temp_path)
+            logger.info(f"✅ Temporary file saved: {temp_path}")
             
             # Generate rules from the uploaded file
             logger.info("🚀 Starting rules generation from uploaded file...")
@@ -1043,7 +1021,7 @@ async def generate_rules(
             logger.info("🔍 Checking if PDF exists...")
             pdf_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
             if not os.path.exists(pdf_path):
-                logger.error("❌ PDF file not found", filename=pdf_filename, path=pdf_path)
+                logger.error(f"❌ PDF file not found - File: {pdf_filename}, Path: {pdf_path}")
                 raise HTTPException(
                     status_code=404, 
                     detail=f"PDF '{pdf_filename}' not found"
@@ -1083,7 +1061,7 @@ async def generate_rules(
                     filename=file.filename if file else pdf_filename,
                     error=str(e))
         import traceback
-        logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
+        logger.error(f"❌ Full error traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to generate rules: {str(e)}"
@@ -1100,7 +1078,7 @@ async def delete_pdf(pdf_filename: str):
     Removes PDF file, ChromaDB data, and Minieu output
     """
     try:
-        logger.info("Deleting PDF", filename=pdf_filename)
+        logger.info(f"Deleting PDF: {pdf_filename}")
         
         pdf_name = os.path.splitext(pdf_filename)[0]
         success = False
@@ -1113,11 +1091,11 @@ async def delete_pdf(pdf_filename: str):
             # Delete Minieu output directory
             import shutil
             shutil.rmtree(minieu_output_dir)
-            logger.info("Deleted Minieu output directory", path=minieu_output_dir)
+            logger.info(f"Deleted Minieu output directory: {minieu_output_dir}")
         
         # Delete ChromaDB data
         if chromadb_manager.delete_collection(pdf_name):
-            logger.info("Deleted ChromaDB collection", pdf_name=pdf_name)
+            logger.info(f"Deleted ChromaDB collection: {pdf_name}")
             success = True
         
         if success:
@@ -1125,9 +1103,9 @@ async def delete_pdf(pdf_filename: str):
             file_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.info("Deleted PDF file", path=file_path)
+                logger.info(f"Deleted PDF file: {file_path}")
             
-            logger.info("PDF deletion completed", filename=pdf_filename)
+            logger.info(f"PDF deletion completed: {pdf_filename}")
             return JSONResponse(
                 content={
                     "success": True,

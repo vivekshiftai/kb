@@ -585,7 +585,7 @@ class ChromaDBVectorStore(BaseVectorStore):
     async def list_processed_pdfs(self) -> List[str]:
         """Get list of all processed PDF filenames"""
         try:
-            logger.info("🔍 Querying ChromaDB for all documents", step="chromadb_query_start")
+            logger.info("🔍 Querying ChromaDB for all documents - Step: chromadb_query_start")
             
             # Get all unique PDF filenames from the collection
             all_results = self.collection.get(
@@ -593,9 +593,7 @@ class ChromaDBVectorStore(BaseVectorStore):
                 limit=10000  # Adjust based on expected size
             )
             
-            logger.info("📊 Retrieved documents from ChromaDB", 
-                       total_documents=len(all_results.get("ids", [])),
-                       step="chromadb_query_complete")
+            logger.info(f"📊 Retrieved documents from ChromaDB - Total: {len(all_results.get('ids', []))}, Step: chromadb_query_complete")
             
             pdf_filenames = set()
             metadata_count = 0
@@ -607,27 +605,17 @@ class ChromaDBVectorStore(BaseVectorStore):
                     pdf_filenames.add(metadata["pdf_filename"])
                     valid_metadata_count += 1
                 else:
-                    logger.debug(f"⚠️ Document {i} has invalid metadata", 
-                                metadata=metadata,
-                                step="invalid_metadata")
+                    logger.debug(f"⚠️ Document {i} has invalid metadata - Metadata: {metadata}, Step: invalid_metadata")
             
-            logger.info("📋 Processed all document metadata", 
-                       total_metadata=metadata_count,
-                       valid_metadata=valid_metadata_count,
-                       unique_pdfs=len(pdf_filenames),
-                       step="metadata_processing_complete")
+            logger.info(f"📋 Processed all document metadata - Total: {metadata_count}, Valid: {valid_metadata_count}, Unique PDFs: {len(pdf_filenames)}, Step: metadata_processing_complete")
             
             sorted_filenames = sorted(list(pdf_filenames))
-            logger.info(f"✅ Found {len(sorted_filenames)} processed PDFs in ChromaDB", 
-                       pdf_filenames=sorted_filenames[:5],  # Log first 5 for debugging
-                       step="list_complete")
+            logger.info(f"✅ Found {len(sorted_filenames)} processed PDFs in ChromaDB - First 5: {sorted_filenames[:5]}, Step: list_complete")
             
             return sorted_filenames
             
         except Exception as e:
-            logger.error(f"❌ Error listing processed PDFs from ChromaDB", 
-                        error=str(e),
-                        step="list_error")
+            logger.error(f"❌ Error listing processed PDFs from ChromaDB - Error: {str(e)}, Step: list_error")
             return []
 
     async def delete_pdf(self, pdf_filename: str) -> bool:
@@ -648,9 +636,7 @@ class ChromaDBVectorStore(BaseVectorStore):
     async def get_pdf_stats(self, pdf_filename: str) -> Dict[str, Any]:
         """Get statistics for a specific PDF"""
         try:
-            logger.info(f"📊 Getting stats for PDF", 
-                       pdf_filename=pdf_filename,
-                       step="stats_query_start")
+            logger.info(f"📊 Getting stats for PDF - File: {pdf_filename}, Step: stats_query_start")
             
             # Get all documents and filter by pdf_filename
             results = self.collection.get(
@@ -659,10 +645,7 @@ class ChromaDBVectorStore(BaseVectorStore):
             
             count = len(results['ids']) if results and 'ids' in results else 0
             
-            logger.info(f"📈 Retrieved stats for PDF", 
-                       pdf_filename=pdf_filename,
-                       vector_count=count,
-                       step="stats_query_complete")
+            logger.info(f"📈 Retrieved stats for PDF - File: {pdf_filename}, Vector Count: {count}, Step: stats_query_complete")
             
             return {
                 "pdf_filename": pdf_filename,
@@ -671,10 +654,7 @@ class ChromaDBVectorStore(BaseVectorStore):
             }
             
         except Exception as e:
-            logger.error(f"❌ Error getting PDF stats from ChromaDB", 
-                        pdf_filename=pdf_filename,
-                        error=str(e),
-                        step="stats_error")
+            logger.error(f"❌ Error getting PDF stats from ChromaDB - File: {pdf_filename}, Error: {str(e)}, Step: stats_error")
             return {"pdf_filename": pdf_filename, "vector_count": 0, "store_type": "chromadb"}
 
     async def get_all_chunks_for_pdf(self, pdf_filename: str) -> List[Dict[str, Any]]:
@@ -712,18 +692,12 @@ class ChromaDBVectorStore(BaseVectorStore):
                         "score": 1.0  # Default score for retrieved chunks
                     })
             
-            logger.info(f"📈 Retrieved {len(chunks)} chunks for PDF", 
-                       pdf_filename=pdf_filename,
-                       chunk_count=len(chunks),
-                       step="chunks_query_complete")
+            logger.info(f"📈 Retrieved {len(chunks)} chunks for PDF - File: {pdf_filename}, Chunk Count: {len(chunks)}, Step: chunks_query_complete")
             
             return chunks
             
         except Exception as e:
-            logger.error(f"❌ Error getting all chunks for PDF from ChromaDB", 
-                        pdf_filename=pdf_filename,
-                        error=str(e),
-                        step="chunks_error")
+            logger.error(f"❌ Error getting all chunks for PDF from ChromaDB - File: {pdf_filename}, Error: {str(e)}, Step: chunks_error")
             return []
 
 

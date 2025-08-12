@@ -80,7 +80,7 @@ class RulesGenerator:
                 batch_text = "\n\n".join([chunk["text"] for chunk in batch_chunks])
                 
                 if batch_text.strip():
-                    logger.info(f"✅ Combined text from batch {batch_num}", text_length=len(batch_text))
+                    logger.info(f"✅ Combined text from batch {batch_num} - Length: {len(batch_text)}")
                     
                     # Generate rules for this batch
                     logger.info(f"🔧 Generating IoT rules for batch {batch_num}...")
@@ -147,7 +147,7 @@ class RulesGenerator:
         except Exception as e:
             logger.error(f"❌ Error generating rules from PDF {pdf_filename}: {e}")
             import traceback
-            logger.error("❌ Full error traceback:", traceback=traceback.format_exc())
+            logger.error(f"❌ Full error traceback: {traceback.format_exc()}")
             raise
     
     async def _extract_chunk_text(self, doc: fitz.Document, page_numbers: List[int]) -> str:
@@ -178,7 +178,7 @@ class RulesGenerator:
             
             logger.debug("🤖 Calling OpenAI for rules generation...")
             response = await self.openai_client.generate_response(prompt)
-            logger.debug("✅ OpenAI response received", response_length=len(response))
+            logger.debug(f"✅ OpenAI response received - Length: {len(response)}")
             
             # Parse the response to extract rules
             logger.debug("🔍 Parsing OpenAI response for rules...")
@@ -199,7 +199,7 @@ class RulesGenerator:
             
             logger.debug("🤖 Calling OpenAI for maintenance data extraction...")
             response = await self.openai_client.generate_response(prompt)
-            logger.debug("✅ OpenAI response received", response_length=len(response))
+            logger.debug(f"✅ OpenAI response received - Length: {len(response)}")
             
             # Parse the response to extract maintenance data
             logger.debug("🔍 Parsing OpenAI response for maintenance data...")
@@ -220,7 +220,7 @@ class RulesGenerator:
             
             logger.debug("🤖 Calling OpenAI for safety precautions extraction...")
             response = await self.openai_client.generate_response(prompt)
-            logger.debug("✅ OpenAI response received", response_length=len(response))
+            logger.debug(f"✅ OpenAI response received - Length: {len(response)}")
             
             # Parse the response to extract safety precautions
             logger.debug("🔍 Parsing OpenAI response for safety precautions...")
