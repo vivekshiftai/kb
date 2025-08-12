@@ -4,7 +4,8 @@ Application settings and configuration management
 
 import os
 from typing import List, Optional
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 import logging
 
 class Settings(BaseSettings):
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = Field(default=1000, env="CHUNK_SIZE")
     CHUNK_OVERLAP: int = Field(default=200, env="CHUNK_OVERLAP")
     MAX_CHUNKS_PER_PDF: int = Field(default=1000, env="MAX_CHUNKS_PER_PDF")
+    CHUNK_MAX_LENGTH: int = Field(default=1000, env="CHUNK_MAX_LENGTH")
+    
+    # Search Settings
+    MAX_SEARCH_RESULTS: int = Field(default=10, env="MAX_SEARCH_RESULTS")
     
     # Vector Database Settings
     VECTOR_STORE_TYPE: str = Field(default="chromadb", env="VECTOR_STORE_TYPE")
@@ -95,10 +100,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_REQUESTS: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
     RATE_LIMIT_WINDOW: int = Field(default=3600, env="RATE_LIMIT_WINDOW")  # 1 hour
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "extra": "ignore"  # Ignore extra fields from environment variables
+    }
 
 # Global settings instance
 _settings: Optional[Settings] = None
@@ -112,6 +119,7 @@ def get_settings() -> Settings:
         # Ensure directories exist
         os.makedirs(_settings.UPLOAD_DIR, exist_ok=True)
         os.makedirs(_settings.OUTPUT_DIR, exist_ok=True)
+        os.makedirs(_settings.MINIEU_OUTPUT_DIR, exist_ok=True)
         os.makedirs(_settings.CHROMADB_PERSIST_DIRECTORY, exist_ok=True)
         
         # Create subdirectories
@@ -124,6 +132,7 @@ def get_settings() -> Settings:
             try:
                 os.chmod(_settings.UPLOAD_DIR, 0o755)
                 os.chmod(_settings.OUTPUT_DIR, 0o755)
+                os.chmod(_settings.MINIEU_OUTPUT_DIR, 0o755)
                 os.chmod(_settings.CHROMADB_PERSIST_DIRECTORY, 0o755)
             except PermissionError:
                 logging.warning("Could not set directory permissions - running without elevated privileges")
@@ -149,7 +158,7 @@ def validate_settings() -> bool:
             return False
     
     # Check directory permissions
-    for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR]:
+    for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR, settings.MINIEU_OUTPUT_DIR]:
         if not os.access(directory, os.W_OK):
             logging.error(f"Directory {directory} is not writable")
             return False
