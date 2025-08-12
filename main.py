@@ -612,40 +612,23 @@ async def cleanup_temp_file(file_path: str):
 async def process_pdf_background(file_path: str, filename: str, file_hash: str):
     """Background task for PDF processing pipeline using Minieu output"""
     try:
-        logger.info("🔄 Starting background PDF processing", 
-                   filename=filename,
-                   file_path=file_path,
-                   file_hash=file_hash[:8] + "...")
+        logger.info(f"🔄 Starting background PDF processing - File: {filename}, Path: {file_path}, Hash: {file_hash[:8]}...")
         processing_start = time.time()
         
         # Step 1: Process PDF with Minieu
-        logger.info("🤖 Step 1: Processing PDF with Minieu", 
-                   filename=filename,
-                   step="minieu_processing")
+        logger.info(f"🤖 Step 1: Processing PDF with Minieu - File: {filename}, Step: minieu_processing")
         minieu_result = await minieu_processor.process_pdf_with_minieu(file_path, filename)
         
-        logger.info("✅ Minieu processing completed", 
-                   filename=filename,
-                   minieu_time=minieu_result.get("processing_time", 0),
-                   step="minieu_complete")
+        logger.info(f"✅ Minieu processing completed - File: {filename}, Time: {minieu_result.get('processing_time', 0)}, Step: minieu_complete")
         
         # Step 2: Process PDF using Minieu output data
-        logger.info("📄 Step 2: Processing PDF using Minieu output data", 
-                   filename=filename,
-                   step="content_extraction")
+        logger.info(f"📄 Step 2: Processing PDF using Minieu output data - File: {filename}, Step: content_extraction")
         processing_result = await pdf_processor.process_pdf(file_path, filename)
         
-        logger.info("✅ PDF content extraction completed", 
-                   filename=filename,
-                   chunks=len(processing_result["chunks"]),
-                   images=processing_result.get("total_images", 0),
-                   step="content_extraction_complete")
+        logger.info(f"✅ PDF content extraction completed - File: {filename}, Chunks: {len(processing_result['chunks'])}, Images: {processing_result.get('total_images', 0)}, Step: content_extraction_complete")
         
         # Step 2: Store in ChromaDB
-        logger.info("🗄️ Step 2: Storing chunks in ChromaDB", 
-                   filename=filename,
-                   chunk_count=len(processing_result["chunks"]),
-                   step="vector_storage")
+        logger.info(f"🗄️ Step 2: Storing chunks in ChromaDB - File: {filename}, Chunk Count: {len(processing_result['chunks'])}, Step: vector_storage")
         
         # Store chunks using ChromaDB manager
         pdf_name = os.path.splitext(filename)[0]
@@ -654,19 +637,11 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
         if not storage_success:
             raise Exception("Failed to store chunks in ChromaDB")
         
-        logger.info("✅ ChromaDB storage completed", 
-                   filename=filename,
-                   total_chunks=len(processing_result["chunks"]),
-                   step="vector_storage_complete")
+        logger.info(f"✅ ChromaDB storage completed - File: {filename}, Total Chunks: {len(processing_result['chunks'])}, Step: vector_storage_complete")
         
         processing_time = time.time() - processing_start
         
-        logger.info("🎉 PDF processing pipeline completed successfully", 
-                   filename=filename,
-                   total_chunks=len(processing_result["chunks"]),
-                   total_images=processing_result.get("total_images", 0),
-                   processing_time=f"{processing_time:.2f}s",
-                   step="pipeline_complete")
+        logger.info(f"🎉 PDF processing pipeline completed successfully - File: {filename}, Total Chunks: {len(processing_result['chunks'])}, Total Images: {processing_result.get('total_images', 0)}, Time: {processing_time:.2f}s, Step: pipeline_complete")
         
     except Exception as e:
         logger.error("❌ Background PDF processing failed", 
@@ -674,9 +649,7 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                     error=str(e),
                     step="pipeline_failed")
         import traceback
-        logger.error("❌ Full error traceback:", 
-                    traceback=traceback.format_exc(),
-                    filename=filename)
+        logger.error(f"❌ Full error traceback for {filename}: {traceback.format_exc()}")
 
 
 @app.get("/pdfs/", response_model=PDFListResponse, tags=["PDF Management"])
