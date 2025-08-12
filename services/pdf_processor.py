@@ -30,7 +30,18 @@ class PDFProcessor:
             minieu_output_dir = os.path.join(self.settings.MINIEU_OUTPUT_DIR, pdf_name)
             
             if not os.path.exists(minieu_output_dir):
-                raise FileNotFoundError(f"Minieu output directory not found: {minieu_output_dir}")
+                logger.warning(f"⚠️ Minieu output directory not found: {minieu_output_dir}")
+                logger.info(f"📋 Please process the PDF with Minieu first, then upload again")
+                logger.info(f"📋 Expected Minieu output structure:")
+                logger.info(f"   {minieu_output_dir}/")
+                logger.info(f"   └── [timestamp_or_run_id]/")
+                logger.info(f"       └── auto/")
+                logger.info(f"           ├── *.md files")
+                logger.info(f"           └── images/")
+                logger.info(f"               └── *.png, *.jpg files")
+                logger.info(f"📋 Current Minieu output directory: {self.settings.MINIEU_OUTPUT_DIR}")
+                logger.info(f"📋 Available directories: {os.listdir(self.settings.MINIEU_OUTPUT_DIR) if os.path.exists(self.settings.MINIEU_OUTPUT_DIR) else 'None'}")
+                raise FileNotFoundError(f"Minieu output directory not found: {minieu_output_dir}. Please process the PDF with Minieu first.")
             
             logger.info(f"📁 Found Minieu output directory", 
                        minieu_dir=minieu_output_dir,
@@ -114,13 +125,27 @@ class PDFProcessor:
     def _find_auto_directory(self, minieu_output_dir: str) -> str:
         """Find the 'auto' directory within Minieu output"""
         try:
-            for item in os.listdir(minieu_output_dir):
+            logger.info(f"🔍 Searching for auto directory in: {minieu_output_dir}")
+            
+            if not os.path.exists(minieu_output_dir):
+                logger.error(f"Minieu output directory does not exist: {minieu_output_dir}")
+                return None
+            
+            items = os.listdir(minieu_output_dir)
+            logger.info(f"📁 Found {len(items)} items in Minieu output directory: {items}")
+            
+            for item in items:
                 item_path = os.path.join(minieu_output_dir, item)
                 if os.path.isdir(item_path):
+                    logger.info(f"📁 Checking directory: {item}")
                     auto_path = os.path.join(item_path, "auto")
                     if os.path.exists(auto_path):
+                        logger.info(f"✅ Found auto directory: {auto_path}")
                         return auto_path
+                    else:
+                        logger.debug(f"❌ No auto directory in: {item}")
             
+            logger.warning(f"⚠️ No auto directory found in any subdirectory of: {minieu_output_dir}")
             return None
         except Exception as e:
             logger.error(f"Error finding auto directory: {e}")
@@ -172,8 +197,8 @@ class PDFProcessor:
                     if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
                         file_path = os.path.join(images_dir, file)
                         
-                        # Create relative path for storage
-                        rel_path = os.path.relpath(file_path, self.settings.OUTPUT_DIR)
+                        # Create relative path for storage - use Minieu output as base
+                        rel_path = os.path.relpath(file_path, self.settings.MINIEU_OUTPUT_DIR)
                         
                         images.append({
                             "filename": file,

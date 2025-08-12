@@ -113,19 +113,19 @@ rules_generator = RulesGenerator()
 # Ensure required directories exist
 ensure_directories()
 
-# Mount static files for serving extracted images
-images_dir = os.path.join(settings.OUTPUT_DIR, "images")
+# Mount static files for serving extracted images from Minieu output
+images_dir = settings.MINIEU_OUTPUT_DIR
 os.makedirs(images_dir, exist_ok=True)
-logger.info(f"Mounting images directory", images_dir=images_dir, exists=os.path.exists(images_dir))
+logger.info(f"Mounting Minieu output directory for images", images_dir=images_dir, exists=os.path.exists(images_dir))
 
-# Check if images directory has any files
+# Check if Minieu output directory has any image files
 if os.path.exists(images_dir):
     image_files = []
     for root, dirs, files in os.walk(images_dir):
         for file in files:
             if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
                 image_files.append(os.path.join(root, file))
-    logger.info(f"Found {len(image_files)} image files in images directory")
+    logger.info(f"Found {len(image_files)} image files in Minieu output directory")
 
 app.mount("/images", StaticFiles(directory=images_dir), name="images")
 
@@ -199,12 +199,12 @@ async def root():
 async def debug_images():
     """Debug endpoint to check image directory and files"""
     try:
-        # Check if images directory exists
+        # Check if Minieu output directory exists
         images_exist = os.path.exists(images_dir)
         images_list = []
         
         if images_exist:
-            # List all files in images directory
+            # List all image files in Minieu output directory
             for root, dirs, files in os.walk(images_dir):
                 for file in files:
                     if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
@@ -218,7 +218,7 @@ async def debug_images():
                         })
         
         return {
-            "images_directory": images_dir,
+            "minieu_output_directory": images_dir,
             "directory_exists": images_exist,
             "total_images": len(images_list),
             "images": images_list[:10]  # Return first 10 images
@@ -227,6 +227,70 @@ async def debug_images():
         logger.error("Error in debug images endpoint", error=str(e))
         return {"error": str(e)}
 
+
+@app.get("/debug/minieu-status/", tags=["Debug"])
+async def debug_minieu_status():
+    """Debug endpoint to check Minieu output status and structure"""
+    try:
+        minieu_dir = settings.MINIEU_OUTPUT_DIR
+        status = {
+            "minieu_output_dir": minieu_dir,
+            "exists": os.path.exists(minieu_dir),
+            "pdfs_processed": []
+        }
+        
+        if os.path.exists(minieu_dir):
+            for item in os.listdir(minieu_dir):
+                item_path = os.path.join(minieu_dir, item)
+                if os.path.isdir(item_path):
+                    # Check for auto directory
+                    auto_found = False
+                    auto_path = None
+                    for subitem in os.listdir(item_path):
+                        subitem_path = os.path.join(item_path, subitem)
+                        if os.path.isdir(subitem_path):
+                            auto_check = os.path.join(subitem_path, "auto")
+                            if os.path.exists(auto_check):
+                                auto_found = True
+                                auto_path = auto_check
+                                break
+                    
+                    status["pdfs_processed"].append({
+                        "pdf_name": item,
+                        "pdf_filename": f"{item}.pdf",
+                        "has_auto_dir": auto_found,
+                        "auto_path": auto_path,
+                        "markdown_files": [],
+                        "image_files": []
+                    })
+                    
+                    if auto_found and auto_path:
+                        # Count markdown files
+                        md_files = [f for f in os.listdir(auto_path) if f.endswith('.md')]
+                        status["pdfs_processed"][-1]["markdown_files"] = md_files
+                        
+                        # Count images
+                        images_dir = os.path.join(auto_path, "images")
+                        if os.path.exists(images_dir):
+                            img_files = [f for f in os.listdir(images_dir) 
+                                       if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))]
+                            status["pdfs_processed"][-1]["image_files"] = img_files
+        
+        # Add validation summary
+        status["validation"] = {
+            "minieu_dir_exists": os.path.exists(minieu_dir),
+            "minieu_dir_writable": os.access(minieu_dir, os.W_OK) if os.path.exists(minieu_dir) else False,
+            "total_pdfs_found": len(status["pdfs_processed"]),
+            "pdfs_with_auto_dir": len([p for p in status["pdfs_processed"] if p["has_auto_dir"]]),
+            "total_markdown_files": sum(len(p["markdown_files"]) for p in status["pdfs_processed"]),
+            "total_image_files": sum(len(p["image_files"]) for p in status["pdfs_processed"])
+        }
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Error checking Minieu status: {e}")
+        return {"error": str(e)}
 
 @app.get("/debug/query-test/", tags=["Debug"])
 async def debug_query_test():
@@ -238,9 +302,14 @@ async def debug_query_test():
             for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
                 item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
                 if os.path.isdir(item_path):
-                    auto_path = os.path.join(item_path, "auto")
-                    if os.path.exists(auto_path):
-                        processed_pdfs.append(f"{item}.pdf")
+                    # Look for subdirectory with 'auto'
+                    for subitem in os.listdir(item_path):
+                        subitem_path = os.path.join(item_path, subitem)
+                        if os.path.isdir(subitem_path):
+                            auto_path = os.path.join(subitem_path, "auto")
+                            if os.path.exists(auto_path):
+                                processed_pdfs.append(f"{item}.pdf")
+                                break
         
         if not processed_pdfs:
             return {"error": "No processed PDFs found in Minieu output"}
@@ -428,9 +497,15 @@ async def upload_pdf(
             for item in os.listdir(minieu_output_dir):
                 item_path = os.path.join(minieu_output_dir, item)
                 if os.path.isdir(item_path):
-                    auto_path = os.path.join(item_path, "auto")
-                    if os.path.exists(auto_path):
-                        auto_dir = auto_path
+                    # Look for subdirectory with 'auto'
+                    for subitem in os.listdir(item_path):
+                        subitem_path = os.path.join(item_path, subitem)
+                        if os.path.isdir(subitem_path):
+                            auto_path = os.path.join(subitem_path, "auto")
+                            if os.path.exists(auto_path):
+                                auto_dir = auto_path
+                                break
+                    if auto_dir:
                         break
             
             if auto_dir:
@@ -443,6 +518,12 @@ async def upload_pdf(
                 )
         
         logger.info("✅ PDF not previously processed")
+        
+        # Check if Minieu output exists for this PDF
+        if not os.path.exists(minieu_output_dir):
+            logger.warning(f"⚠️ Minieu output not found for {clean_name}")
+            logger.info(f"📋 The PDF will be uploaded but processing will fail until Minieu output is available")
+            logger.info(f"📋 Expected Minieu output location: {minieu_output_dir}")
         
         # Start background processing
         logger.info("🚀 Starting background processing...")
@@ -587,9 +668,19 @@ async def list_pdfs():
             for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
                 item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
                 if os.path.isdir(item_path):
-                    # Check if this directory has an 'auto' subdirectory
-                    auto_path = os.path.join(item_path, "auto")
-                    if os.path.exists(auto_path):
+                    # Check if this directory has a subdirectory with 'auto'
+                    auto_found = False
+                    auto_path = None
+                    for subitem in os.listdir(item_path):
+                        subitem_path = os.path.join(item_path, subitem)
+                        if os.path.isdir(subitem_path):
+                            auto_check = os.path.join(subitem_path, "auto")
+                            if os.path.exists(auto_check):
+                                auto_found = True
+                                auto_path = auto_check
+                                break
+                    
+                    if auto_found:
                         filename = f"{item}.pdf"
                         logger.info(f"📄 Found processed PDF: {filename}", step="pdf_found")
                         
@@ -686,9 +777,15 @@ async def query_pdf(request: QueryRequest):
         for item in os.listdir(minieu_output_dir):
             item_path = os.path.join(minieu_output_dir, item)
             if os.path.isdir(item_path):
-                auto_path = os.path.join(item_path, "auto")
-                if os.path.exists(auto_path):
-                    auto_dir = auto_path
+                # Look for subdirectory with 'auto'
+                for subitem in os.listdir(item_path):
+                    subitem_path = os.path.join(item_path, subitem)
+                    if os.path.isdir(subitem_path):
+                        auto_path = os.path.join(subitem_path, "auto")
+                        if os.path.exists(auto_path):
+                            auto_dir = auto_path
+                            break
+                if auto_dir:
                     break
         
         if not auto_dir:
@@ -746,15 +843,30 @@ async def query_pdf(request: QueryRequest):
                 
                 abs_img_path = next((p for p in possible_paths if os.path.exists(p)), None)
                 if abs_img_path:
-                    # Create URL for the image
-                    rel_path = os.path.relpath(abs_img_path, settings.OUTPUT_DIR)
-                    image_url = f"/images/{rel_path.replace(os.sep, '/')}"
-                    
-                    images.append(ImageInfo(
-                        filename=os.path.basename(img_path),
-                        url=image_url,
-                        page_number=meta.get("page_number", 1)
-                    ))
+                    try:
+                        # Create URL for the image - use Minieu output directory as base
+                        rel_path = os.path.relpath(abs_img_path, settings.MINIEU_OUTPUT_DIR)
+                        image_url = f"/images/{rel_path.replace(os.sep, '/')}"
+                        
+                        images.append(ImageInfo(
+                            filename=os.path.basename(img_path),
+                            url=image_url,
+                            page_number=meta.get("page_number", 1)
+                        ))
+                        
+                        logger.debug(f"✅ Image path resolved successfully", 
+                                   original_path=img_path,
+                                   resolved_path=abs_img_path,
+                                   url=image_url)
+                    except ValueError as e:
+                        logger.warning(f"⚠️ Could not create relative path for image", 
+                                     img_path=img_path,
+                                     resolved_path=abs_img_path,
+                                     error=str(e))
+                else:
+                    logger.warning(f"⚠️ Image file not found", 
+                                 img_path=img_path,
+                                 possible_paths=possible_paths)
             
             # Create result
             result = QueryResult(
