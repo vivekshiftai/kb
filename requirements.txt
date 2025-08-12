@@ -16,9 +16,9 @@ Pillow==10.1.0
 pinecone-client==3.0.0
 chromadb==0.4.18
 
-# PDF processing
-PyMuPDF==1.23.8
-pdf2image==1.16.3
+# PDF processing (using Minieu output)
+# PyMuPDF==1.23.8  # Removed - using Minieu output instead
+# pdf2image==1.16.3  # Removed - using Minieu output instead
 Pillow==10.1.0
 
 # Data processing

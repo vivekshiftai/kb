@@ -4,12 +4,12 @@ A high-performance FastAPI backend application that processes PDF documents and 
 
 ## 🚀 Features
 
-- **PDF Upload & Processing**: Upload PDF files and extract text, images, and metadata
+- **Minieu-Based PDF Processing**: Process PDFs using Minieu output data (markdown + images)
 - **Vector Database Storage**: Store processed content in Pinecone with graceful fallback to ChromaDB
 - **Intelligent Querying**: Query specific PDFs using natural language with OpenAI's LLM
 - **IoT Rules Generation**: Generate IoT device rules and maintenance data from PDF content
-- **Advanced PDF Processing**: ToC-based semantic chunking with separate text and image collections
-- **Image Extraction & Serving**: Extract and serve images from PDF documents via static URLs
+- **Advanced Content Processing**: Markdown-based semantic chunking with image mapping
+- **Image Extraction & Serving**: Extract and serve images from Minieu output via static URLs
 - **RESTful API**: Clean, well-documented API endpoints with OpenAPI/Swagger docs
 - **Performance Optimized**: Target response times < 1s with async processing
 - **Comprehensive Logging**: Structured JSON logging for monitoring and debugging
@@ -59,6 +59,7 @@ CHROMA_PERSIST_DIRECTORY=./chroma_db
 # File Processing
 UPLOAD_DIR=./uploads
 OUTPUT_DIR=./outputs
+MINIEU_OUTPUT_DIR=./minieu_output
 MAX_FILE_SIZE=52428800
 
 # Processing Configuration
@@ -70,10 +71,20 @@ MAX_SEARCH_RESULTS=10
 LOG_LEVEL=INFO
 ```
 
-### 3. Create Required Directories
+### 3. Minieu Setup
+
+This system uses Minieu for PDF processing. Ensure you have:
+
+1. **Minieu installed and configured** to process PDFs
+2. **Minieu output directory** containing processed markdown and images
+3. **Directory structure**: `./minieu_output/{pdf_name}/` containing:
+   - Markdown files (`.md` or `.markdown`)
+   - Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`)
+
+### 4. Create Required Directories
 
 ```bash
-mkdir -p uploads outputs chroma_db
+mkdir -p uploads outputs minieu_output chroma_db
 ```
 
 Or run the helper script:
@@ -97,6 +108,19 @@ The API will be available at:
 - **API**: `http://localhost:8000`
 - **Interactive Docs**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
+
+### Testing Minieu Processing
+
+To test if your Minieu setup is working correctly:
+
+```bash
+python test_minieu_processing.py
+```
+
+This will verify that:
+- Minieu output directory exists
+- Markdown and image files are found
+- Processing pipeline works correctly
 
 ## 🧪 Testing
 

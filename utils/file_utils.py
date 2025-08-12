@@ -17,6 +17,7 @@ def ensure_directories():
     directories = [
         settings.UPLOAD_DIR,
         settings.OUTPUT_DIR,
+        settings.MINIEU_OUTPUT_DIR,
         os.path.join(settings.OUTPUT_DIR, "images")
     ]
     

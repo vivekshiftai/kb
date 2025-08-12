@@ -11,15 +11,16 @@ import os
 import sys
 import time
 import logging
+import chromadb
 from typing import List
 from datetime import datetime
 
 from models.schemas import (
     QueryRequest, QueryResponse, PDFListResponse, PDFInfo,
-    UploadResponse, HealthResponse, RulesRequest, RulesResponse, SafetyPrecaution
+    UploadResponse, HealthResponse, RulesRequest, RulesResponse, SafetyPrecaution,
+    ImageInfo, QueryResult
 )
 from services.pdf_processor import PDFProcessor
-from services.vector_store import VectorStore
 from services.openai_client import OpenAIClient
 from services.rules_generator import RulesGenerator
 from config.settings import get_settings
@@ -106,7 +107,6 @@ app.add_middleware(
 # Initialize settings and services
 settings = get_settings()
 pdf_processor = PDFProcessor()
-vector_store = VectorStore()
 openai_client = OpenAIClient()
 rules_generator = RulesGenerator()
 
@@ -116,6 +116,17 @@ ensure_directories()
 # Mount static files for serving extracted images
 images_dir = os.path.join(settings.OUTPUT_DIR, "images")
 os.makedirs(images_dir, exist_ok=True)
+logger.info(f"Mounting images directory", images_dir=images_dir, exists=os.path.exists(images_dir))
+
+# Check if images directory has any files
+if os.path.exists(images_dir):
+    image_files = []
+    for root, dirs, files in os.walk(images_dir):
+        for file in files:
+            if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                image_files.append(os.path.join(root, file))
+    logger.info(f"Found {len(image_files)} image files in images directory")
+
 app.mount("/images", StaticFiles(directory=images_dir), name="images")
 
 
@@ -126,10 +137,6 @@ async def startup_event():
         logger.info("🚀 Starting RAG PDF Processing API...")
         logger.info("📋 Initializing services...")
         
-        logger.info("🔧 Initializing vector store...")
-        await vector_store.initialize()
-        logger.info("✅ Vector store initialized successfully")
-        
         logger.info("🔧 Checking OpenAI client...")
         openai_status = openai_client.check_connection()
         logger.info(f"✅ OpenAI client status: {openai_status}")
@@ -138,11 +145,20 @@ async def startup_event():
         ensure_directories()
         logger.info("✅ Directories verified")
         
+        logger.info("🔧 Checking ChromaDB availability...")
+        try:
+            import chromadb
+            test_client = chromadb.PersistentClient(path="./test_chromadb")
+            test_client.heartbeat()
+            logger.info("✅ ChromaDB is available")
+        except Exception as e:
+            logger.warning("⚠️ ChromaDB health check failed", error=str(e))
+        
         logger.info("🎉 Application started successfully", 
                    version="2.0.0",
-                   pinecone_index=settings.PINECONE_INDEX_NAME,
                    upload_dir=settings.UPLOAD_DIR,
-                   output_dir=settings.OUTPUT_DIR)
+                   output_dir=settings.OUTPUT_DIR,
+                   minieu_output_dir=settings.MINIEU_OUTPUT_DIR)
     except Exception as e:
         logger.error("❌ Failed to start application", error=str(e))
         raise
@@ -179,14 +195,106 @@ async def root():
     }
 
 
+@app.get("/debug/images/", tags=["Debug"])
+async def debug_images():
+    """Debug endpoint to check image directory and files"""
+    try:
+        # Check if images directory exists
+        images_exist = os.path.exists(images_dir)
+        images_list = []
+        
+        if images_exist:
+            # List all files in images directory
+            for root, dirs, files in os.walk(images_dir):
+                for file in files:
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        rel_path = os.path.relpath(os.path.join(root, file), images_dir)
+                        images_list.append({
+                            "filename": file,
+                            "relative_path": rel_path,
+                            "full_path": os.path.join(root, file),
+                            "size": os.path.getsize(os.path.join(root, file)),
+                            "url": f"/images/{rel_path}"
+                        })
+        
+        return {
+            "images_directory": images_dir,
+            "directory_exists": images_exist,
+            "total_images": len(images_list),
+            "images": images_list[:10]  # Return first 10 images
+        }
+    except Exception as e:
+        logger.error("Error in debug images endpoint", error=str(e))
+        return {"error": str(e)}
+
+
+@app.get("/debug/query-test/", tags=["Debug"])
+async def debug_query_test():
+    """Debug endpoint to test query functionality with a simple search"""
+    try:
+        # Get list of processed PDFs from Minieu output
+        processed_pdfs = []
+        if os.path.exists(settings.MINIEU_OUTPUT_DIR):
+            for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
+                item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
+                if os.path.isdir(item_path):
+                    auto_path = os.path.join(item_path, "auto")
+                    if os.path.exists(auto_path):
+                        processed_pdfs.append(f"{item}.pdf")
+        
+        if not processed_pdfs:
+            return {"error": "No processed PDFs found in Minieu output"}
+        
+        # Test with first PDF
+        test_pdf = processed_pdfs[0]
+        pdf_name = os.path.splitext(test_pdf)[0]
+        
+        # Initialize ChromaDB client
+        chromadb_path = f"./chroma_db_{pdf_name}"
+        if not os.path.exists(chromadb_path):
+            return {"error": f"ChromaDB not found for {test_pdf}"}
+        
+        client = chromadb.PersistentClient(path=chromadb_path)
+        md_collection = client.get_collection("md_heading_chunks")
+        
+        # Perform a simple search
+        search_results = md_collection.query(
+            query_texts=["test"],
+            n_results=3,
+            include=["metadatas", "documents"]
+        )
+        
+        # Check for images in results
+        matches_with_images = []
+        for i, meta in enumerate(search_results["metadatas"][0]):
+            images = meta.get("images", "")
+            if images:
+                img_list = [img.strip() for img in images.split(";") if img.strip()]
+                if img_list:
+                    matches_with_images.append({
+                        "match_index": i,
+                        "heading": meta.get("heading", ""),
+                        "image_count": len(img_list),
+                        "images": img_list[:3]  # Show first 3 image paths
+                    })
+        
+        return {
+            "test_pdf": test_pdf,
+            "total_matches": len(search_results["documents"][0]),
+            "matches_with_images": len(matches_with_images),
+            "matches_with_images_details": matches_with_images
+        }
+        
+    except Exception as e:
+        logger.error("Error in debug query test", error=str(e))
+        return {"error": str(e)}
+
+
 @app.get("/health/", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """Comprehensive health check endpoint"""
     try:
         start_time = time.time()
-        
-        # Check vector store connection
-        vector_store_status = await vector_store.health_check()
         
         # Check OpenAI client connection
         openai_status = openai_client.check_connection()
@@ -194,14 +302,28 @@ async def health_check():
         # Check file system
         upload_dir_exists = os.path.exists(settings.UPLOAD_DIR)
         output_dir_exists = os.path.exists(settings.OUTPUT_DIR)
+        minieu_output_dir_exists = os.path.exists(settings.MINIEU_OUTPUT_DIR)
+        
+        # Check ChromaDB availability
+        chromadb_status = True
+        try:
+            import chromadb
+            # Test ChromaDB connection
+            test_client = chromadb.PersistentClient(path="./test_chromadb")
+            test_client.heartbeat()
+            chromadb_status = True
+        except Exception as e:
+            logger.warning("ChromaDB health check failed", error=str(e))
+            chromadb_status = False
         
         health_time = time.time() - start_time
         
         overall_status = "healthy" if all([
-            vector_store_status, 
             openai_status, 
             upload_dir_exists, 
-            output_dir_exists
+            output_dir_exists,
+            minieu_output_dir_exists,
+            chromadb_status
         ]) else "degraded"
         
         logger.info("Health check completed", 
@@ -211,7 +333,7 @@ async def health_check():
         return HealthResponse(
             status=overall_status,
             message="All services operational" if overall_status == "healthy" else "Some services have issues",
-            vector_store_status="connected" if vector_store_status else "error",
+            vector_store_status="connected" if chromadb_status else "error",
             openai_status="connected" if openai_status else "error",
             timestamp=datetime.now()
         )
@@ -295,17 +417,31 @@ async def upload_pdf(
         file_hash = get_file_hash(file_path)
         logger.info("✅ File hash generated", hash=file_hash[:8] + "...")
         
-        # Check if PDF already processed
-        logger.info("🔍 Checking if PDF already processed...")
-        processed_pdfs = await vector_store.list_processed_pdfs()
-        if clean_name in processed_pdfs:
-            logger.info("ℹ️ PDF already processed", filename=clean_name)
-            return UploadResponse(
-                success=True,
-                message="PDF already processed and available for querying",
-                pdf_filename=clean_name,
-                processing_status="completed"
-            )
+        # Check if PDF already processed in Minieu output
+        logger.info("🔍 Checking if PDF already processed in Minieu output...")
+        pdf_name = os.path.splitext(clean_name)[0]
+        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        
+        if os.path.exists(minieu_output_dir):
+            # Check if auto directory exists
+            auto_dir = None
+            for item in os.listdir(minieu_output_dir):
+                item_path = os.path.join(minieu_output_dir, item)
+                if os.path.isdir(item_path):
+                    auto_path = os.path.join(item_path, "auto")
+                    if os.path.exists(auto_path):
+                        auto_dir = auto_path
+                        break
+            
+            if auto_dir:
+                logger.info("ℹ️ PDF already processed in Minieu output", filename=clean_name)
+                return UploadResponse(
+                    success=True,
+                    message="PDF already processed and available for querying",
+                    pdf_filename=clean_name,
+                    processing_status="completed"
+                )
+        
         logger.info("✅ PDF not previously processed")
         
         # Start background processing
@@ -352,7 +488,7 @@ async def cleanup_temp_file(file_path: str):
         logger.warning(f"Error cleaning up temporary file {file_path}: {e}")
 
 async def process_pdf_background(file_path: str, filename: str, file_hash: str):
-    """Background task for PDF processing pipeline"""
+    """Background task for PDF processing pipeline using Minieu output"""
     try:
         logger.info("🔄 Starting background PDF processing", 
                    filename=filename,
@@ -360,8 +496,8 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                    file_hash=file_hash[:8] + "...")
         processing_start = time.time()
         
-        # Step 1: Process PDF (extract text, images, metadata)
-        logger.info("📄 Step 1: Extracting content from PDF", 
+        # Step 1: Process PDF using Minieu output data
+        logger.info("📄 Step 1: Processing PDF using Minieu output data", 
                    filename=filename,
                    step="content_extraction")
         processing_result = await pdf_processor.process_pdf(file_path, filename)
@@ -372,28 +508,50 @@ async def process_pdf_background(file_path: str, filename: str, file_hash: str):
                    images=processing_result.get("total_images", 0),
                    step="content_extraction_complete")
         
-        # Step 2: Store in vector database
-        logger.info("🗄️ Step 2: Storing chunks in vector database", 
+        # Step 2: Store in ChromaDB
+        logger.info("🗄️ Step 2: Storing chunks in ChromaDB", 
                    filename=filename,
                    chunk_count=len(processing_result["chunks"]),
                    step="vector_storage")
         
-        document_id = await vector_store.store_document_chunks(
-            pdf_filename=filename,
-            chunks=processing_result["chunks"],
-            file_hash=file_hash
-        )
+        # Initialize ChromaDB client
+        pdf_name = os.path.splitext(filename)[0]
+        chromadb_path = f"./chroma_db_{pdf_name}"
+        client = chromadb.PersistentClient(path=chromadb_path)
         
-        logger.info("✅ Vector database storage completed", 
+        # Get or create collection for markdown chunks
+        md_collection = client.get_or_create_collection("md_heading_chunks")
+        
+        # Store chunks in ChromaDB
+        from sentence_transformers import SentenceTransformer
+        text_embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        
+        for i, chunk in enumerate(processing_result["chunks"]):
+            combined_text = f"{chunk['heading']}\n{chunk['text']}"
+            embedding = text_embedder.encode(combined_text).tolist()
+            
+            md_collection.add(
+                ids=[f"md-{i}"],
+                embeddings=[embedding],
+                metadatas=[{
+                    "heading": chunk["heading"],
+                    "images": ";".join(chunk["images"]),
+                    "tables_count": len(chunk.get("tables", [])),
+                    "page_number": chunk.get("page_number", 1),
+                    "source_file": chunk.get("source_file", filename)
+                }],
+                documents=[chunk["text"]]
+            )
+        
+        logger.info("✅ ChromaDB storage completed", 
                    filename=filename,
-                   document_id=document_id,
+                   total_chunks=len(processing_result["chunks"]),
                    step="vector_storage_complete")
         
         processing_time = time.time() - processing_start
         
         logger.info("🎉 PDF processing pipeline completed successfully", 
                    filename=filename,
-                   document_id=document_id,
                    total_chunks=len(processing_result["chunks"]),
                    total_images=processing_result.get("total_images", 0),
                    processing_time=f"{processing_time:.2f}s",
@@ -421,61 +579,65 @@ async def list_pdfs():
         start_time = time.time()
         logger.info("📋 Starting PDF list retrieval", step="list_start")
         
-        # Get processed PDFs from vector store
-        logger.info("🔍 Querying vector store for processed PDFs", step="vector_store_query")
-        pdf_filenames = await vector_store.list_processed_pdfs()
-        logger.info("✅ Retrieved PDF filenames from vector store", 
-                   count=len(pdf_filenames),
-                   filenames=pdf_filenames[:5],  # Log first 5 for debugging
-                   step="vector_store_query_complete")
-        
-        # Collect detailed information for each PDF
-        logger.info("📊 Collecting detailed information for each PDF", 
-                   step="detail_collection")
+        # Get processed PDFs from Minieu output directory
+        logger.info("🔍 Scanning Minieu output directory for processed PDFs", step="minieu_scan")
         pdf_infos = []
-        for i, filename in enumerate(pdf_filenames):
-            try:
-                logger.info(f"📄 Processing PDF {i+1}/{len(pdf_filenames)}", 
-                           filename=filename,
-                           step="individual_pdf_processing")
-                
-                stats = await vector_store.get_pdf_stats(filename)
-                logger.info(f"📈 Retrieved stats for {filename}", 
-                           stats=stats,
-                           step="stats_retrieved")
-                
-                # Get file info if available
-                file_path = os.path.join(settings.UPLOAD_DIR, filename)
-                file_size = None
-                upload_date = None
-                
-                if os.path.exists(file_path):
-                    file_size = os.path.getsize(file_path)
-                    upload_date = datetime.fromtimestamp(os.path.getmtime(file_path))
-                    logger.info(f"📁 File exists on disk", 
-                               filename=filename,
-                               file_size=file_size,
-                               upload_date=upload_date,
-                               step="file_info_retrieved")
-                else:
-                    logger.warning(f"⚠️ File not found on disk", 
-                                  filename=filename,
-                                  expected_path=file_path,
-                                  step="file_not_found")
-                
-                pdf_infos.append(PDFInfo(
-                    filename=filename,
-                    chunk_count=stats.get("vector_count", 0),
-                    file_size=file_size,
-                    upload_date=upload_date
-                ))
-                
-            except Exception as e:
-                logger.warning("Error getting PDF stats", 
-                             filename=filename, 
-                             error=str(e),
-                             step="stats_error")
-                pdf_infos.append(PDFInfo(filename=filename))
+        
+        if os.path.exists(settings.MINIEU_OUTPUT_DIR):
+            for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
+                item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
+                if os.path.isdir(item_path):
+                    # Check if this directory has an 'auto' subdirectory
+                    auto_path = os.path.join(item_path, "auto")
+                    if os.path.exists(auto_path):
+                        filename = f"{item}.pdf"
+                        logger.info(f"📄 Found processed PDF: {filename}", step="pdf_found")
+                        
+                        try:
+                            # Get file info if available
+                            file_path = os.path.join(settings.UPLOAD_DIR, filename)
+                            file_size = None
+                            upload_date = None
+                            
+                            if os.path.exists(file_path):
+                                file_size = os.path.getsize(file_path)
+                                upload_date = datetime.fromtimestamp(os.path.getmtime(file_path))
+                                logger.info(f"📁 File exists on disk", 
+                                           filename=filename,
+                                           file_size=file_size,
+                                           upload_date=upload_date,
+                                           step="file_info_retrieved")
+                            else:
+                                logger.warning(f"⚠️ File not found on disk", 
+                                               filename=filename,
+                                               expected_path=file_path,
+                                               step="file_not_found")
+                            
+                            # Get chunk count from ChromaDB
+                            chunk_count = 0
+                            try:
+                                chromadb_path = f"./chroma_db_{item}"
+                                if os.path.exists(chromadb_path):
+                                    client = chromadb.PersistentClient(path=chromadb_path)
+                                    md_collection = client.get_collection("md_heading_chunks")
+                                    chunk_count = md_collection.count()
+                                    logger.info(f"📈 Retrieved chunk count for {filename}: {chunk_count}")
+                            except Exception as e:
+                                logger.warning(f"Could not get chunk count for {filename}: {e}")
+                            
+                            pdf_infos.append(PDFInfo(
+                                filename=filename,
+                                chunk_count=chunk_count,
+                                file_size=file_size,
+                                upload_date=upload_date
+                            ))
+                            
+                        except Exception as e:
+                            logger.warning("Error processing PDF info", 
+                                         filename=filename, 
+                                         error=str(e),
+                                         step="pdf_info_error")
+                            pdf_infos.append(PDFInfo(filename=filename))
         
         list_time = time.time() - start_time
         logger.info("✅ PDF list retrieval completed", 
@@ -498,130 +660,167 @@ async def list_pdfs():
         )
 
 
-@app.post("/query/", response_model=QueryResponse, tags=["Querying"])
+@app.post("/query/", response_model=QueryResponse)
 async def query_pdf(request: QueryRequest):
-    """
-    Query a specific PDF with natural language
-    
-    - **pdf_filename**: Name of the PDF to query
-    - **query**: Natural language question
-    - **max_results**: Maximum number of relevant chunks to return (1-20)
-    
-    Returns AI-generated answer with supporting evidence and images
-    """
+    """Query a specific PDF using Minieu-processed content"""
     try:
-        start_time = time.time()
+        query_start = time.time()
         
-        # Validate PDF exists
-        processed_pdfs = await vector_store.list_processed_pdfs()
-        if request.pdf_filename not in processed_pdfs:
-            available_pdfs = ", ".join(processed_pdfs[:5])  # Show first 5
+        logger.info(f"🔍 Starting query for PDF: {request.pdf_filename}", 
+                   query=request.query,
+                   max_results=request.max_results,
+                   step="query_start")
+        
+        # Validate PDF exists in Minieu output
+        pdf_name = os.path.splitext(request.pdf_filename)[0]
+        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        
+        if not os.path.exists(minieu_output_dir):
             raise HTTPException(
                 status_code=404, 
-                detail=f"PDF '{request.pdf_filename}' not found. Available PDFs: {available_pdfs}"
+                detail=f"PDF '{request.pdf_filename}' not found in Minieu output directory"
             )
         
-        # Perform similarity search - get top 9 chunks
-        logger.info("Performing similarity search", 
-                   pdf_filename=request.pdf_filename,
-                   query=request.query[:100])
+        # Find auto directory
+        auto_dir = None
+        for item in os.listdir(minieu_output_dir):
+            item_path = os.path.join(minieu_output_dir, item)
+            if os.path.isdir(item_path):
+                auto_path = os.path.join(item_path, "auto")
+                if os.path.exists(auto_path):
+                    auto_dir = auto_path
+                    break
         
-        search_results = await vector_store.search_pdf(
-            pdf_filename=request.pdf_filename,
-            query=request.query,
-            top_k=9  # Fixed to 9 chunks
+        if not auto_dir:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No 'auto' directory found for PDF '{request.pdf_filename}'"
+            )
+        
+        logger.info(f"📁 Found auto directory: {auto_dir}", 
+                   step="auto_dir_found")
+        
+        # Initialize ChromaDB client
+        chromadb_path = f"./chroma_db_{pdf_name}"
+        client = chromadb.PersistentClient(path=chromadb_path)
+        
+        # Get or create collection for markdown chunks
+        md_collection = client.get_or_create_collection("md_heading_chunks")
+        
+        # Perform semantic search
+        logger.info("🔍 Performing semantic search on markdown chunks...", 
+                   step="semantic_search")
+        
+        search_results = md_collection.query(
+            query_texts=[request.query],
+            n_results=request.max_results,
+            include=["metadatas", "documents"]
         )
         
-        # Handle no results case
-        if not search_results["matches"]:
-            no_results_time = time.time() - start_time
-            logger.info("No relevant content found", 
-                       pdf_filename=request.pdf_filename,
-                       query=request.query[:50])
-            
+        if not search_results["documents"][0]:
+            logger.warning("No relevant chunks found for query", 
+                          query=request.query)
             return QueryResponse(
                 pdf_filename=request.pdf_filename,
                 query=request.query,
-                answer="I couldn't find any relevant information for your query in this PDF. Try rephrasing your question or check if the content exists in the document.",
+                answer="No relevant information found for your query.",
                 results=[],
                 total_matches=0,
-                processing_time=no_results_time
+                processing_time=time.time() - query_start
             )
         
-        # Generate AI response with chunk identification
-        logger.info("Generating AI response", 
-                   matches=len(search_results["matches"]))
+        # Process search results
+        results = []
+        for idx, (doc, meta) in enumerate(zip(search_results["documents"][0], search_results["metadatas"][0])):
+            # Extract images from metadata
+            images = []
+            img_paths = [img.strip() for img in meta.get("images", "").split(";") if img.strip()]
+            
+            for img_path in img_paths:
+                # Try to resolve image path
+                possible_paths = [
+                    img_path,
+                    os.path.join(auto_dir, "images", img_path),
+                    os.path.join(auto_dir, img_path)
+                ]
+                
+                abs_img_path = next((p for p in possible_paths if os.path.exists(p)), None)
+                if abs_img_path:
+                    # Create URL for the image
+                    rel_path = os.path.relpath(abs_img_path, settings.OUTPUT_DIR)
+                    image_url = f"/images/{rel_path.replace(os.sep, '/')}"
+                    
+                    images.append(ImageInfo(
+                        filename=os.path.basename(img_path),
+                        url=image_url,
+                        page_number=meta.get("page_number", 1)
+                    ))
+            
+            # Create result
+            result = QueryResult(
+                heading=meta.get("heading", "Untitled"),
+                text=doc[:800] + ("..." if len(doc) > 800 else ""),
+                score=search_results.get("distances", [[]])[0][idx] if search_results.get("distances") else 0.0,
+                page_number=meta.get("page_number", 1),
+                images=images
+            )
+            results.append(result)
         
-        context_chunks = [match["text"] for match in search_results["matches"]]
-        openai_response = await openai_client.generate_response_with_chunk_identification(
+        # Generate AI response using the best chunk
+        best_chunk = search_results["documents"][0][0]  # Use the first (best) result
+        best_meta = search_results["metadatas"][0][0]
+        
+        logger.info("🤖 Generating AI response...", 
+                   step="ai_response")
+        
+        # Create context from top chunks
+        context_chunks = []
+        for doc, meta in zip(search_results["documents"][0][:3], search_results["metadatas"][0][:3]):
+            context_chunks.append({
+                "heading": meta.get("heading", "Untitled"),
+                "text": doc,
+                "images": meta.get("images", "")
+            })
+        
+        # Generate response using OpenAI
+        ai_response = await openai_client.generate_response_with_chunk_identification(
             question=request.query,
             context_chunks=context_chunks,
             pdf_filename=request.pdf_filename
         )
         
-        # Extract used chunk indices from LLM response
-        used_chunk_indices = openai_response.get("used_chunk_indices", [])
+        # Filter results based on used chunks
+        used_chunk_indices = ai_response.get("used_chunk_indices", [])
+        if used_chunk_indices:
+            used_matches = [results[i] for i in used_chunk_indices if i < len(results)]
+        else:
+            used_matches = results
         
-        # Filter results to only include chunks that were actually used
-        used_matches = []
-        for i, match in enumerate(search_results["matches"]):
-            if i in used_chunk_indices:
-                used_matches.append(match)
+        processing_time = time.time() - query_start
         
-        # Format results with accessible image URLs (only for used chunks)
-        formatted_results = []
-        for match in used_matches:
-            # Process image paths to URLs
-            image_infos = []
-            for img_path in match.get("images", []):
-                if os.path.exists(img_path):
-                    # Create relative URL for static file serving
-                    rel_path = os.path.relpath(img_path, images_dir)
-                    image_url = f"/images/{rel_path}"
-                    
-                    image_infos.append({
-                        "filename": os.path.basename(img_path),
-                        "url": image_url,
-                        "page_number": match.get("page_number", 1)
-                    })
-            
-            formatted_results.append({
-                "heading": match["heading"],
-                "text": match["text"],
-                "score": match["score"],
-                "page_number": match.get("page_number"),
-                "images": image_infos
-            })
-        
-        query_time = time.time() - start_time
-        
-        logger.info("Query completed successfully", 
+        logger.info(f"✅ Query completed successfully", 
                    pdf_filename=request.pdf_filename,
-                   query_preview=request.query[:50],
-                   total_chunks_retrieved=len(search_results["matches"]),
+                   total_chunks_retrieved=len(results),
                    chunks_used=len(used_matches),
-                   processing_time=query_time)
+                   processing_time=f"{processing_time:.2f}s",
+                   step="query_complete")
         
         return QueryResponse(
             pdf_filename=request.pdf_filename,
             query=request.query,
-            answer=openai_response["answer"],
-            results=formatted_results,
+            answer=ai_response["answer"],
+            results=used_matches,
             total_matches=len(used_matches),
-            processing_time=query_time
+            processing_time=processing_time
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error("Query processing failed", 
+        logger.error(f"❌ Error in query endpoint", 
                     pdf_filename=request.pdf_filename,
-                    query=request.query[:50],
-                    error=str(e))
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to process query: {str(e)}"
-        )
+                    query=request.query,
+                    error=str(e),
+                    step="query_error")
+        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
 @app.post("/rules/", response_model=RulesResponse, tags=["Rules Generation"])
@@ -778,13 +977,31 @@ async def delete_pdf(pdf_filename: str):
     
     - **pdf_filename**: Name of the PDF to delete
     
-    Removes PDF file, vector embeddings, and extracted images
+    Removes PDF file, ChromaDB data, and Minieu output
     """
     try:
         logger.info("Deleting PDF", filename=pdf_filename)
         
-        # Delete from vector store
-        success = await vector_store.delete_pdf(pdf_filename)
+        pdf_name = os.path.splitext(pdf_filename)[0]
+        success = False
+        
+        # Check if PDF exists in Minieu output
+        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        if os.path.exists(minieu_output_dir):
+            success = True
+            
+            # Delete Minieu output directory
+            import shutil
+            shutil.rmtree(minieu_output_dir)
+            logger.info("Deleted Minieu output directory", path=minieu_output_dir)
+        
+        # Delete ChromaDB data
+        chromadb_path = f"./chroma_db_{pdf_name}"
+        if os.path.exists(chromadb_path):
+            import shutil
+            shutil.rmtree(chromadb_path)
+            logger.info("Deleted ChromaDB directory", path=chromadb_path)
+            success = True
         
         if success:
             # Delete uploaded file
@@ -792,14 +1009,6 @@ async def delete_pdf(pdf_filename: str):
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logger.info("Deleted PDF file", path=file_path)
-            
-            # Delete extracted images directory
-            pdf_name = os.path.splitext(pdf_filename)[0]
-            images_path = os.path.join(images_dir, pdf_name)
-            if os.path.exists(images_path):
-                import shutil
-                shutil.rmtree(images_path)
-                logger.info("Deleted images directory", path=images_path)
             
             logger.info("PDF deletion completed", filename=pdf_filename)
             return JSONResponse(
