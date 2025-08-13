@@ -163,7 +163,7 @@ def validate_settings() -> bool:
             return False
     
     # Check directory permissions
-            for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR, settings.MINERU_OUTPUT_DIR]:
+    for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR, settings.MINERU_OUTPUT_DIR]:
         if not os.access(directory, os.W_OK):
             logging.error(f"Directory {directory} is not writable")
             return False
