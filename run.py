@@ -13,14 +13,23 @@ def main():
     # Check if .env file exists
     if not os.path.exists('.env'):
         print("⚠️  .env file not found!")
-        print("Please create a .env file with your OpenAI API key:")
-        print("OPENAI_API_KEY=your_api_key_here")
-        print("MINERU_OUTPUT_DIR=./mineru_output")
-        print("UPLOAD_DIR=./uploads")
-        sys.exit(1)
+        print("Creating .env file from template...")
+        try:
+            import shutil
+            shutil.copy('env.example', '.env')
+            print("✅ Created .env file from env.example")
+            print("⚠️  Please edit .env file and add your OpenAI API key:")
+            print("OPENAI_API_KEY=your_api_key_here")
+        except Exception as e:
+            print(f"❌ Failed to create .env file: {e}")
+            print("⚠️  Please manually create a .env file with your OpenAI API key:")
+            print("OPENAI_API_KEY=your_api_key_here")
+            print("MINERU_OUTPUT_DIR=./mineru_output")
+            print("UPLOAD_DIR=./uploads")
+            print("⚠️  Continuing without .env file (using defaults)...")
     
     # Check if required directories exist
-    required_dirs = ['uploads', 'minieu_output', 'chroma_db', 'output', 'logs']
+    required_dirs = ['uploads', 'mineru_output', 'chromadb', 'output', 'logs']
     for directory in required_dirs:
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)

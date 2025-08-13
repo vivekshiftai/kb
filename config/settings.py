@@ -109,7 +109,11 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
-        "extra": "ignore"  # Ignore extra fields from environment variables
+        "extra": "ignore",  # Ignore extra fields from environment variables
+        "validate_assignment": True,
+        "env_ignore_empty": True,
+        "str_strip_whitespace": True,
+        "validate_default": True
     }
 
 # Global settings instance
@@ -119,7 +123,13 @@ def get_settings() -> Settings:
     """Get or create settings instance"""
     global _settings
     if _settings is None:
-        _settings = Settings()
+        try:
+            _settings = Settings()
+        except Exception as e:
+            logging.error(f"Failed to load settings from environment: {e}")
+            # Create settings with defaults, ignoring environment variables
+            _settings = Settings(_env_file=None)
+            logging.warning("Using default settings due to environment configuration error")
         
         # Ensure directories exist
         os.makedirs(_settings.UPLOAD_DIR, exist_ok=True)

@@ -60,48 +60,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize settings and services
-settings = get_settings()
-pdf_processor = PDFProcessor()
-openai_client = OpenAIClient()
-rules_generator = RulesGenerator()
-minieu_processor = MinieuProcessor()
-chromadb_manager = ChromaDBManager()
-
-# Ensure required directories exist
-ensure_directories()
-
-# Mount static files for serving extracted images from MinerU output
-images_dir = settings.MINERU_OUTPUT_DIR
-os.makedirs(images_dir, exist_ok=True)
-logger.info(f"Mounting Minieu output directory for images: {images_dir} (exists: {os.path.exists(images_dir)})")
-
-# Check if Minieu output directory has any image files
-if os.path.exists(images_dir):
-    image_files = []
-    for root, dirs, files in os.walk(images_dir):
-        for file in files:
-            if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
-                image_files.append(os.path.join(root, file))
-    logger.info(f"Found {len(image_files)} image files in Minieu output directory")
-
-app.mount("/images", StaticFiles(directory=images_dir), name="images")
+# Initialize services (settings will be loaded in startup)
+pdf_processor = None
+openai_client = None
+rules_generator = None
+minieu_processor = None
+chromadb_manager = None
+settings = None
+images_dir = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
+    global settings, pdf_processor, openai_client, rules_generator, minieu_processor, chromadb_manager, images_dir
+    
     try:
         logger.info("🚀 Starting RAG PDF Processing API...")
         logger.info("📋 Initializing services...")
         
+        # Initialize settings first
+        logger.info("🔧 Loading settings...")
+        settings = get_settings()
+        logger.info("✅ Settings loaded successfully")
+        
+        # Initialize services
+        logger.info("🔧 Initializing services...")
+        pdf_processor = PDFProcessor()
+        openai_client = OpenAIClient()
+        rules_generator = RulesGenerator()
+        minieu_processor = MinieuProcessor()
+        chromadb_manager = ChromaDBManager()
+        logger.info("✅ Services initialized")
+        
+        # Ensure required directories exist
+        logger.info("🔧 Creating directories...")
+        ensure_directories()
+        logger.info("✅ Directories verified")
+        
+        # Mount static files for serving extracted images from MinerU output
+        images_dir = settings.MINERU_OUTPUT_DIR
+        os.makedirs(images_dir, exist_ok=True)
+        logger.info(f"Mounting Minieu output directory for images: {images_dir} (exists: {os.path.exists(images_dir)})")
+        
+        # Check if Minieu output directory has any image files
+        if os.path.exists(images_dir):
+            image_files = []
+            for root, dirs, files in os.walk(images_dir):
+                for file in files:
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        image_files.append(os.path.join(root, file))
+            logger.info(f"Found {len(image_files)} image files in Minieu output directory")
+        
+        app.mount("/images", StaticFiles(directory=images_dir), name="images")
+        
         logger.info("🔧 Checking OpenAI client...")
         openai_status = openai_client.check_connection()
         logger.info(f"✅ OpenAI client status: {openai_status}")
-        
-        logger.info("🔧 Checking directories...")
-        ensure_directories()
-        logger.info("✅ Directories verified")
         
         logger.info("🔧 Checking ChromaDB availability...")
         try:

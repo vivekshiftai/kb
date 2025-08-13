@@ -2,6 +2,7 @@ import os
 import subprocess
 import asyncio
 import logging
+import time
 from typing import Dict, Any
 from datetime import datetime
 
@@ -58,32 +59,82 @@ class MinieuProcessor:
             ]
             
             logger.info(f"📋 Minieu command: {' '.join(cmd)}")
+            logger.info(f"⏱️ Starting MinerU processing - this may take several minutes for large PDFs...")
             
-            # Run MinerU process with fallback for v2.1.0
+            # Run MinerU process with real-time output logging
             try:
+                logger.info(f"🔄 Starting MinerU processing with real-time output...")
+                
+                # First try primary command with real-time output
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.STDOUT  # Redirect stderr to stdout for combined output
                 )
                 
-                stdout, stderr = await process.communicate()
+                # Read output in real-time with timeout
+                output_lines = []
+                line_count = 0
+                start_time = time.time()
+                try:
+                    while True:
+                        line = await asyncio.wait_for(process.stdout.readline(), timeout=30.0)  # 30 second timeout per line
+                        if not line:
+                            break
+                        line_str = line.decode().strip()
+                        if line_str:
+                            logger.info(f"📋 MinerU: {line_str}")
+                            output_lines.append(line_str)
+                            line_count += 1
+                            
+                            # Show progress every 10 lines or every 30 seconds
+                            if line_count % 10 == 0 or (time.time() - start_time) > 30:
+                                elapsed = time.time() - start_time
+                                logger.info(f"📊 MinerU Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
+                                start_time = time.time()
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ MinerU output reading timed out, but process may still be running")
+                
+                await process.wait()
                 
                 if process.returncode != 0:
-                    logger.warning(f"⚠️ Primary MinerU command failed, trying fallback for {filename} - Return code: {process.returncode}, Error: {stderr.decode() if stderr else 'No error output'}, Step: minieu_fallback")
+                    logger.warning(f"⚠️ Primary MinerU command failed, trying fallback for {filename} - Return code: {process.returncode}, Step: minieu_fallback")
                     
-                    # Try fallback command for v2.1.0
+                    # Try fallback command with real-time output
                     process = await asyncio.create_subprocess_exec(
                         *fallback_cmd,
                         stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
+                        stderr=asyncio.subprocess.STDOUT
                     )
                     
-                    stdout, stderr = await process.communicate()
+                    # Read fallback output in real-time with timeout
+                    output_lines = []
+                    line_count = 0
+                    start_time = time.time()
+                    try:
+                        while True:
+                            line = await asyncio.wait_for(process.stdout.readline(), timeout=30.0)  # 30 second timeout per line
+                            if not line:
+                                break
+                            line_str = line.decode().strip()
+                            if line_str:
+                                logger.info(f"📋 MinerU (fallback): {line_str}")
+                                output_lines.append(line_str)
+                                line_count += 1
+                                
+                                # Show progress every 10 lines or every 30 seconds
+                                if line_count % 10 == 0 or (time.time() - start_time) > 30:
+                                    elapsed = time.time() - start_time
+                                    logger.info(f"📊 MinerU Fallback Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
+                                    start_time = time.time()
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⚠️ MinerU fallback output reading timed out, but process may still be running")
+                    
+                    await process.wait()
                     
                     if process.returncode != 0:
-                        logger.error(f"❌ MinerU processing failed for {filename} - Return code: {process.returncode}, Error: {stderr.decode() if stderr else 'No error output'}, Step: minieu_failed")
-                        raise Exception(f"MinerU processing failed: {stderr.decode() if stderr else 'Unknown error'}")
+                        logger.error(f"❌ MinerU processing failed for {filename} - Return code: {process.returncode}, Step: minieu_failed")
+                        raise Exception(f"MinerU processing failed with return code: {process.returncode}")
                 else:
                     logger.info(f"✅ Primary MinerU command succeeded for {filename}")
                     
@@ -91,7 +142,7 @@ class MinieuProcessor:
                 logger.error(f"❌ Error running MinerU process for {filename}: {str(e)}")
                 raise
             
-            logger.info(f"✅ Minieu processing completed for {filename} - Output: {stdout.decode() if stdout else 'No output'}, Step: minieu_completed")
+            logger.info(f"✅ Minieu processing completed for {filename} - Total output lines: {len(output_lines)}, Step: minieu_completed")
             
             # Wait a bit for files to be written
             await asyncio.sleep(2)
