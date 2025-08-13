@@ -25,8 +25,8 @@ class MinieuProcessor:
             # Get PDF name without extension
             pdf_name = os.path.splitext(filename)[0]
             
-            # Check if Minieu output already exists
-            minieu_output_dir = os.path.join(self.settings.MINIEU_OUTPUT_DIR, pdf_name)
+            # Check if MinerU output already exists
+            minieu_output_dir = os.path.join(self.settings.MINERU_OUTPUT_DIR, pdf_name)
             if os.path.exists(minieu_output_dir):
                 logger.info(f"✅ Minieu output already exists for {filename} - Dir: {minieu_output_dir}, Step: minieu_already_processed")
                 return {
@@ -36,8 +36,8 @@ class MinieuProcessor:
                     "processing_time": 0
                 }
             
-            # Create Minieu output directory
-            os.makedirs(self.settings.MINIEU_OUTPUT_DIR, exist_ok=True)
+            # Create MinerU output directory
+            os.makedirs(self.settings.MINERU_OUTPUT_DIR, exist_ok=True)
             
             # Call Minieu to process the PDF
             logger.info(f"🚀 Calling Minieu to process {filename}... - Step: minieu_call")
@@ -47,14 +47,14 @@ class MinieuProcessor:
             cmd = [
                 "mineru", "process", 
                 "-p", pdf_path,
-                "--output", self.settings.MINIEU_OUTPUT_DIR
+                "--output", self.settings.MINERU_OUTPUT_DIR
             ]
             
             # Alternative command format with --path
             fallback_cmd = [
                 "mineru", "process", 
                 "--path", pdf_path,
-                "--output", self.settings.MINIEU_OUTPUT_DIR
+                "--output", self.settings.MINERU_OUTPUT_DIR
             ]
             
             logger.info(f"📋 Minieu command: {' '.join(cmd)}")

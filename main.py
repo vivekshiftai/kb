@@ -71,8 +71,8 @@ chromadb_manager = ChromaDBManager()
 # Ensure required directories exist
 ensure_directories()
 
-# Mount static files for serving extracted images from Minieu output
-images_dir = settings.MINIEU_OUTPUT_DIR
+# Mount static files for serving extracted images from MinerU output
+images_dir = settings.MINERU_OUTPUT_DIR
 os.makedirs(images_dir, exist_ok=True)
 logger.info(f"Mounting Minieu output directory for images: {images_dir} (exists: {os.path.exists(images_dir)})")
 
@@ -119,7 +119,7 @@ async def startup_event():
         else:
             logger.info("✅ Minieu is available")
         
-        logger.info(f"🎉 Application started successfully - Version: 2.0.0, Upload: {settings.UPLOAD_DIR}, Output: {settings.OUTPUT_DIR}, Minieu: {settings.MINIEU_OUTPUT_DIR}")
+        logger.info(f"🎉 Application started successfully - Version: 2.0.0, Upload: {settings.UPLOAD_DIR}, Output: {settings.OUTPUT_DIR}, MinerU: {settings.MINERU_OUTPUT_DIR}")
     except Exception as e:
         logger.error(f"❌ Failed to start application: {str(e)}")
         raise
@@ -199,7 +199,7 @@ async def debug_images():
 async def debug_minieu_status():
     """Debug endpoint to check Minieu output status and structure"""
     try:
-        minieu_dir = settings.MINIEU_OUTPUT_DIR
+        minieu_dir = settings.MINERU_OUTPUT_DIR
         status = {
             "minieu_output_dir": minieu_dir,
             "exists": os.path.exists(minieu_dir),
@@ -304,9 +304,9 @@ async def debug_query_test():
     try:
         # Get list of processed PDFs from Minieu output
         processed_pdfs = []
-        if os.path.exists(settings.MINIEU_OUTPUT_DIR):
-            for item in os.listdir(settings.MINIEU_OUTPUT_DIR):
-                item_path = os.path.join(settings.MINIEU_OUTPUT_DIR, item)
+        if os.path.exists(settings.MINERU_OUTPUT_DIR):
+            for item in os.listdir(settings.MINERU_OUTPUT_DIR):
+                item_path = os.path.join(settings.MINERU_OUTPUT_DIR, item)
                 if os.path.isdir(item_path):
                     # Look for subdirectory with 'auto'
                     for subitem in os.listdir(item_path):
@@ -388,7 +388,7 @@ async def health_check():
         # Check file system
         upload_dir_exists = os.path.exists(settings.UPLOAD_DIR)
         output_dir_exists = os.path.exists(settings.OUTPUT_DIR)
-        minieu_output_dir_exists = os.path.exists(settings.MINIEU_OUTPUT_DIR)
+        minieu_output_dir_exists = os.path.exists(settings.MINERU_OUTPUT_DIR)
         
         # Check ChromaDB availability
         chromadb_status = True
@@ -510,7 +510,7 @@ async def upload_pdf(
         # Check if PDF already processed in Minieu output and ChromaDB
         logger.info("🔍 Checking if PDF already processed...")
         pdf_name = os.path.splitext(clean_name)[0]
-        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        minieu_output_dir = os.path.join(settings.MINERU_OUTPUT_DIR, pdf_name)
         
         # Check Minieu output
         minieu_processed = False
@@ -679,7 +679,7 @@ async def list_pdfs():
             stats = chromadb_manager.get_collection_stats(pdf_name)
             
             # Check if Minieu output exists
-            minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+            minieu_output_dir = os.path.join(settings.MINERU_OUTPUT_DIR, pdf_name)
             minieu_processed = os.path.exists(minieu_output_dir)
             
             # Check if auto directory exists
@@ -731,7 +731,7 @@ async def query_pdf(request: QueryRequest):
         
         # Validate PDF exists in Minieu output
         pdf_name = os.path.splitext(request.pdf_filename)[0]
-        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        minieu_output_dir = os.path.join(settings.MINERU_OUTPUT_DIR, pdf_name)
         
         if not os.path.exists(minieu_output_dir):
             raise HTTPException(
@@ -792,7 +792,7 @@ async def query_pdf(request: QueryRequest):
                     img_path,  # Direct path
                     os.path.join(auto_dir, "images", img_path),  # In images subdirectory
                     os.path.join(auto_dir, img_path),  # In auto directory
-                    os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name, "images", img_path),  # Alternative location
+                    os.path.join(settings.MINERU_OUTPUT_DIR, pdf_name, "images", img_path),  # Alternative location
                 ]
                 
                 abs_img_path = None
@@ -804,7 +804,7 @@ async def query_pdf(request: QueryRequest):
                 if abs_img_path:
                     try:
                         # Create URL for the image - use Minieu output directory as base
-                        rel_path = os.path.relpath(abs_img_path, settings.MINIEU_OUTPUT_DIR)
+                        rel_path = os.path.relpath(abs_img_path, settings.MINERU_OUTPUT_DIR)
                         image_url = f"/images/{rel_path.replace(os.sep, '/')}"
                         
                         images.append(ImageInfo(
@@ -1057,7 +1057,7 @@ async def delete_pdf(pdf_filename: str):
         success = False
         
         # Check if PDF exists in Minieu output
-        minieu_output_dir = os.path.join(settings.MINIEU_OUTPUT_DIR, pdf_name)
+        minieu_output_dir = os.path.join(settings.MINERU_OUTPUT_DIR, pdf_name)
         if os.path.exists(minieu_output_dir):
             success = True
             

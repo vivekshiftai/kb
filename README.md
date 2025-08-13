@@ -101,14 +101,14 @@ nano .env
 **Required environment variables:**
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
-MINIEU_OUTPUT_DIR=./minieu_output
+MINERU_OUTPUT_DIR=./mineru_output
 UPLOAD_DIR=./uploads
 ```
 
 #### 5. Create Directories
 
 ```bash
-mkdir -p uploads minieu_output chroma_db output logs
+mkdir -p uploads mineru_output chroma_db output logs
 ```
 
 ## 🚀 Running the Application
@@ -180,7 +180,7 @@ curl -X GET "http://localhost:8000/pdfs/" \
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key (required) | - |
-| `MINIEU_OUTPUT_DIR` | Minieu output directory | `./minieu_output` |
+| `MINERU_OUTPUT_DIR` | MinerU output directory | `./mineru_output` |
 | `UPLOAD_DIR` | PDF upload directory | `./uploads` |
 | `MAX_FILE_SIZE` | Maximum file size (bytes) | `52428800` (50MB) |
 | `LOG_LEVEL` | Logging level | `INFO` |

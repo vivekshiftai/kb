@@ -15,7 +15,7 @@ def main():
         print("⚠️  .env file not found!")
         print("Please create a .env file with your OpenAI API key:")
         print("OPENAI_API_KEY=your_api_key_here")
-        print("MINIEU_OUTPUT_DIR=./minieu_output")
+        print("MINERU_OUTPUT_DIR=./mineru_output")
         print("UPLOAD_DIR=./uploads")
         sys.exit(1)
     

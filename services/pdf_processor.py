@@ -25,9 +25,9 @@ class PDFProcessor:
                        step="processing_start")
             processing_start = datetime.now()
             
-            # Get Minieu output directory for this PDF
+            # Get MinerU output directory for this PDF
             pdf_name = os.path.splitext(filename)[0]
-            minieu_output_dir = os.path.join(self.settings.MINIEU_OUTPUT_DIR, pdf_name)
+            minieu_output_dir = os.path.join(self.settings.MINERU_OUTPUT_DIR, pdf_name)
             
             if not os.path.exists(minieu_output_dir):
                 logger.warning(f"⚠️ Minieu output directory not found: {minieu_output_dir}")
@@ -39,8 +39,8 @@ class PDFProcessor:
                 logger.info(f"           ├── *.md files")
                 logger.info(f"           └── images/")
                 logger.info(f"               └── *.png, *.jpg files")
-                logger.info(f"📋 Current Minieu output directory: {self.settings.MINIEU_OUTPUT_DIR}")
-                logger.info(f"📋 Available directories: {os.listdir(self.settings.MINIEU_OUTPUT_DIR) if os.path.exists(self.settings.MINIEU_OUTPUT_DIR) else 'None'}")
+                logger.info(f"📋 Current MinerU output directory: {self.settings.MINERU_OUTPUT_DIR}")
+                logger.info(f"📋 Available directories: {os.listdir(self.settings.MINERU_OUTPUT_DIR) if os.path.exists(self.settings.MINERU_OUTPUT_DIR) else 'None'}")
                 raise FileNotFoundError(f"Minieu output directory not found: {minieu_output_dir}. Please process the PDF with Minieu first.")
             
             logger.info(f"📁 Found Minieu output directory", 
@@ -198,7 +198,7 @@ class PDFProcessor:
                         file_path = os.path.join(images_dir, file)
                         
                         # Create relative path for storage - use Minieu output as base
-                        rel_path = os.path.relpath(file_path, self.settings.MINIEU_OUTPUT_DIR)
+                        rel_path = os.path.relpath(file_path, self.settings.MINERU_OUTPUT_DIR)
                         
                         images.append({
                             "filename": file,

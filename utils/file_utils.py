@@ -16,13 +16,28 @@ def ensure_directories():
     directories = [
         settings.UPLOAD_DIR,
         settings.OUTPUT_DIR,
-        settings.MINIEU_OUTPUT_DIR,
+        settings.MINERU_OUTPUT_DIR,
         os.path.join(settings.OUTPUT_DIR, "images")
     ]
     
     for directory in directories:
-        os.makedirs(directory, exist_ok=True)
-        logger.info(f"Ensured directory exists: {directory}")
+        try:
+            # Convert relative paths to absolute paths
+            if directory.startswith('./'):
+                abs_directory = os.path.abspath(directory)
+            else:
+                abs_directory = directory
+            
+            os.makedirs(abs_directory, exist_ok=True)
+            logger.info(f"Ensured directory exists: {abs_directory}")
+            
+            # Verify the directory is writable
+            if not os.access(abs_directory, os.W_OK):
+                logger.warning(f"Directory {abs_directory} is not writable")
+                
+        except Exception as e:
+            logger.error(f"Failed to create directory {directory}: {e}")
+            raise
 
 def get_file_hash(file_path: str) -> str:
     """Generate SHA-256 hash of a file"""

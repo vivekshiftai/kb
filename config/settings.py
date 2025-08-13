@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # File Storage Settings
     UPLOAD_DIR: str = Field(default="./uploads", env="UPLOAD_DIR")
     OUTPUT_DIR: str = Field(default="./output", env="OUTPUT_DIR")
-    MINIEU_OUTPUT_DIR: str = Field(default="./minieu_output", env="MINIEU_OUTPUT_DIR")
+    MINERU_OUTPUT_DIR: str = Field(default="./mineru_output", env="MINERU_OUTPUT_DIR")
     MAX_FILE_SIZE: int = Field(default=52428800, env="MAX_FILE_SIZE")  # 50MB
     ALLOWED_EXTENSIONS: List[str] = Field(default=[".pdf"], env="ALLOWED_EXTENSIONS")
     
@@ -124,7 +124,7 @@ def get_settings() -> Settings:
         # Ensure directories exist
         os.makedirs(_settings.UPLOAD_DIR, exist_ok=True)
         os.makedirs(_settings.OUTPUT_DIR, exist_ok=True)
-        os.makedirs(_settings.MINIEU_OUTPUT_DIR, exist_ok=True)
+        os.makedirs(_settings.MINERU_OUTPUT_DIR, exist_ok=True)
         os.makedirs(_settings.CHROMADB_PERSIST_DIRECTORY, exist_ok=True)
         
         # Create subdirectories
@@ -137,7 +137,7 @@ def get_settings() -> Settings:
             try:
                 os.chmod(_settings.UPLOAD_DIR, 0o755)
                 os.chmod(_settings.OUTPUT_DIR, 0o755)
-                os.chmod(_settings.MINIEU_OUTPUT_DIR, 0o755)
+                os.chmod(_settings.MINERU_OUTPUT_DIR, 0o755)
                 os.chmod(_settings.CHROMADB_PERSIST_DIRECTORY, 0o755)
             except PermissionError:
                 logging.warning("Could not set directory permissions - running without elevated privileges")
@@ -163,7 +163,7 @@ def validate_settings() -> bool:
             return False
     
     # Check directory permissions
-    for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR, settings.MINIEU_OUTPUT_DIR]:
+            for directory in [settings.UPLOAD_DIR, settings.OUTPUT_DIR, settings.MINERU_OUTPUT_DIR]:
         if not os.access(directory, os.W_OK):
             logging.error(f"Directory {directory} is not writable")
             return False
