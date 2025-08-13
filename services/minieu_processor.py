@@ -72,28 +72,25 @@ class MinieuProcessor:
                     stderr=asyncio.subprocess.STDOUT  # Redirect stderr to stdout for combined output
                 )
                 
-                # Read output in real-time with timeout
+                # Read output in real-time without timeout
                 output_lines = []
                 line_count = 0
                 start_time = time.time()
-                try:
-                    while True:
-                        line = await asyncio.wait_for(process.stdout.readline(), timeout=30.0)  # 30 second timeout per line
-                        if not line:
-                            break
-                        line_str = line.decode().strip()
-                        if line_str:
-                            logger.info(f"📋 MinerU: {line_str}")
-                            output_lines.append(line_str)
-                            line_count += 1
-                            
-                            # Show progress every 10 lines or every 30 seconds
-                            if line_count % 10 == 0 or (time.time() - start_time) > 30:
-                                elapsed = time.time() - start_time
-                                logger.info(f"📊 MinerU Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
-                                start_time = time.time()
-                except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ MinerU output reading timed out, but process may still be running")
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    line_str = line.decode().strip()
+                    if line_str:
+                        logger.info(f"📋 MinerU: {line_str}")
+                        output_lines.append(line_str)
+                        line_count += 1
+                        
+                        # Show progress every 10 lines or every 30 seconds
+                        if line_count % 10 == 0 or (time.time() - start_time) > 30:
+                            elapsed = time.time() - start_time
+                            logger.info(f"📊 MinerU Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
+                            start_time = time.time()
                 
                 await process.wait()
                 
@@ -107,28 +104,25 @@ class MinieuProcessor:
                         stderr=asyncio.subprocess.STDOUT
                     )
                     
-                    # Read fallback output in real-time with timeout
+                    # Read fallback output in real-time without timeout
                     output_lines = []
                     line_count = 0
                     start_time = time.time()
-                    try:
-                        while True:
-                            line = await asyncio.wait_for(process.stdout.readline(), timeout=30.0)  # 30 second timeout per line
-                            if not line:
-                                break
-                            line_str = line.decode().strip()
-                            if line_str:
-                                logger.info(f"📋 MinerU (fallback): {line_str}")
-                                output_lines.append(line_str)
-                                line_count += 1
-                                
-                                # Show progress every 10 lines or every 30 seconds
-                                if line_count % 10 == 0 or (time.time() - start_time) > 30:
-                                    elapsed = time.time() - start_time
-                                    logger.info(f"📊 MinerU Fallback Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
-                                    start_time = time.time()
-                    except asyncio.TimeoutError:
-                        logger.warning(f"⚠️ MinerU fallback output reading timed out, but process may still be running")
+                    while True:
+                        line = await process.stdout.readline()
+                        if not line:
+                            break
+                        line_str = line.decode().strip()
+                        if line_str:
+                            logger.info(f"📋 MinerU (fallback): {line_str}")
+                            output_lines.append(line_str)
+                            line_count += 1
+                            
+                            # Show progress every 10 lines or every 30 seconds
+                            if line_count % 10 == 0 or (time.time() - start_time) > 30:
+                                elapsed = time.time() - start_time
+                                logger.info(f"📊 MinerU Fallback Progress: {line_count} output lines, {elapsed:.1f}s elapsed")
+                                start_time = time.time()
                     
                     await process.wait()
                     

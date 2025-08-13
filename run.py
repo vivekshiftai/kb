@@ -10,6 +10,11 @@ import sys
 def main():
     """Run the FastAPI application"""
     
+    # Ensure we're in the correct directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+    print(f"✅ Working directory set to: {os.getcwd()}")
+    
     # Check if .env file exists
     if not os.path.exists('.env'):
         print("⚠️  .env file not found!")
